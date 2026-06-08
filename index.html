@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>粵語朗讀評分 • SEN</title>
+<style>
+:root { --purple:#7c3aed; --gold:#f59e0b; --green:#22c55e; --red:#ef4444; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Microsoft JhengHei',sans-serif; background:#1a1a2e; color:#fff; font-size:18px; min-height:100vh; }
+.page { display:none; min-height:100vh; padding:20px; }
+.page.active { display:block; }
+.home-card, .hub-card, .vocab-card, .result-card { background:#fff; color:#1a1a2e; border:4px solid #f59e0b; border-radius:24px; padding:24px; margin:20px auto; max-width:700px; }
+h1,h2 { font-size:2.2em; color:#f59e0b; text-align:center; margin-bottom:20px; }
+input, button { font-size:1.4em; padding:18px 32px; border-radius:16px; border:none; min-height:70px; }
+button { background:#7c3aed; color:#fff; cursor:pointer; touch-action:manipulation; }
+button:active { transform:scale(0.95); }
+.vocab-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; max-width:900px; margin:0 auto; }
+.vocab-card { text-align:center; cursor:pointer; transition:transform .2s; }
+.vocab-card:hover { transform:scale(1.03); }
+.vocab-char { font-size:2.8em; font-weight:bold; color:#7c3aed; }
+.vocab-pinyin { color:#666; margin:8px 0; }
+.record-btn { background:#22c55e; font-size:1.6em; width:100%; margin-top:16px; }
+.score { font-size:2.5em; font-weight:bold; color:#22c55e; }
+.hub-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:20px; max-width:800px; margin:0 auto; }
+.hub-card { background:rgba(255,255,255,0.1); border:3px solid rgba(255,255,255,0.3); color:#fff; text-align:center; cursor:pointer; }
+.hub-icon { font-size:3em; margin-bottom:12px; }
+.progress { position:fixed; top:0; left:0; width:100%; background:#111; padding:8px; z-index:100; }
+.progress-dots { display:flex; justify-content:center; gap:12px; }
+.progress-dot { width:28px; height:28px; border-radius:50%; background:#444; display:flex; align-items:center; justify-content:center; font-size:0.9em; }
+.progress-dot.done { background:#22c55e; }
+.progress-dot.current { background:#f59e0b; animation:pulse 1.5s infinite; }
+@keyframes pulse { 50%{transform:scale(1.2);} }
+#toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:14px 28px; border-radius:12px; z-index:9999; display:none; }
+</style>
+</head>
+<body>
+<div class="progress"><div class="progress-dots" id="progressDots"></div></div>
+
+<!-- HOME -->
+<div id="home" class="page active">
+  <div class="home-card" style="text-align:center;margin-top:80px;">
+    <h1>粵語朗讀評分</h1>
+    <p style="font-size:1.3em;margin:20px 0;">SEN 學生專用 • 即時 AI 評分</p>
+    <input id="studentName" placeholder="輸入你嘅名" style="width:80%;max-width:400px;margin:20px auto;display:block;text-align:center;">
+    <button onclick="startLearning()" style="width:80%;max-width:400px;">開始學習 →</button>
+  </div>
+</div>
+
+<!-- HUB -->
+<div id="hub" class="page">
+  <div style="max-width:800px;margin:40px auto;text-align:center;">
+    <div id="hubGreeting" style="font-size:2em;margin-bottom:30px;">👋 你好，準備好未？</div>
+    <div class="hub-grid">
+      <div class="hub-card" onclick="goTo('vocab');initVocab();">
+        <div class="hub-icon">📚</div>
+        <div style="font-size:1.5em;font-weight:bold;">詞彙學習</div>
+        <div style="opacity:0.8;">聽發音 + 朗讀練習</div>
+        <div id="hubVocab" style="margin-top:12px;"></div>
+      </div>
+      <div class="hub-card" onclick="goTo('assessment');startAssessment();">
+        <div class="hub-icon">🎤</div>
+        <div style="font-size:1.5em;font-weight:bold;">即時評估</div>
+        <div style="opacity:0.8;">錄音 + AI 評分</div>
+        <div id="hubAssessment" style="margin-top:12px;"></div>
+      </div>
+    </div>
+    <button onclick="goTo('home')" style="margin-top:30px;background:#666;">🏠 返回首頁</button>
+  </div>
+</div>
+
+<!-- VOCAB PAGE -->
+<div id="vocab" class="page">
+  <h2>📚 詞彙學習</h2>
+  <div class="vocab-grid" id="vocabGrid"></div>
+  <button onclick="updateHubStatus();goTo('hub')" style="margin:30px auto;display:block;background:#666;">🏠 返回中心</button>
+</div>
+
+<!-- ASSESSMENT PAGE -->
+<div id="assessment" class="page">
+  <h2>🎤 即時評估</h2>
+  <div id="assessmentContent" style="max-width:700px;margin:0 auto;"></div>
+  <button onclick="updateHubStatus();goTo('hub')" style="margin:30px auto;display:block;background:#666;">🏠 返回中心</button>
+</div>
+
+<!-- RESULT -->
+<div id="result" class="page">
+  <div class="result-card" style="text-align:center;">
+    <h2>評分結果</h2>
+    <div id="resultWord" style="font-size:2.2em;margin:20px 0;color:#7c3aed;"></div>
+    <div class="score" id="resultScore"></div>
+    <div id="resultFeedback" style="font-size:1.4em;margin:20px 0;"></div>
+    <div id="resultAI" style="background:#f3e8ff;padding:16px;border-radius:16px;margin:20px 0;"></div>
+    <button onclick="nextAssessment()" style="background:#22c55e;width:100%;margin-top:20px;">下一個詞彙 →</button>
+    <button onclick="finishAll()" style="background:#f59e0b;width:100%;margin-top:12px;">完成評估 🏆</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// STATE
+let state = {
+  name: '',
+  currentWord: null,
+  score: 0,
+  completed: { vocab: false, assessment: false },
+  autoTTS: true,
+  words: [
+    { char:'動如脫兔', pinyin:'duhng yuh tyut tou', meaning:'形容行動好快', target:'動如脫兔' },
+    { char:'一心一意', pinyin:'yat sam yat yi', meaning:'專心做一件事', target:'一心一意' },
+    { char:'馬到成功', pinyin:'ma dou sing gung', meaning:'事情好快成功', target:'馬到成功' },
+    { char:'守株待兔', pinyin:'sau jyu doi tou', meaning:'等機會', target:'守株待兔' },
+    { char:'兔死狐悲', pinyin:'tou sei wu bi', meaning:'見到別人出事自己都傷心', target:'兔死狐悲' }
+  ],
+  assessmentIndex: 0,
+  assessmentScores: []
+};
+
+function speak(text) {
+  if ('speechSynthesis' in window) {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-HK';
+    u.rate = 0.85;
+    speechSynthesis.speak(u);
+  }
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 1800);
+}
+
+function goTo(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(page).classList.add('active');
+}
+
+function updateProgress() {
+  const dots = document.getElementById('progressDots');
+  const items = [
+    {id:'vocab', label:'📚'},
+    {id:'assessment', label:'🎤'}
+  ];
+  dots.innerHTML = items.map(item => {
+    const done = state.completed[item.id];
+    const cls = done ? 'done' : (item.id === 'assessment' && !done ? 'current' : '');
+    return `<div class="progress-dot ${cls}">${item.label}</div>`;
+  }).join('');
+}
+
+function startLearning() {
+  state.name = document.getElementById('studentName').value.trim() || '同學';
+  document.getElementById('hubGreeting').textContent = `👋 ${state.name}，準備好未？`;
+  updateHubStatus();
+  goTo('hub');
+}
+
+function updateHubStatus() {
+  const done = '<span style="background:#22c55e;color:#fff;padding:4px 12px;border-radius:20px;font-size:0.9em;">✅ 完成</span>';
+  const locked = '<span style="background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:20px;font-size:0.9em;">🔓 可選</span>';
+  document.getElementById('hubVocab').innerHTML = state.completed.vocab ? done : locked;
+  document.getElementById('hubAssessment').innerHTML = state.completed.assessment ? done : locked;
+  updateProgress();
+  localStorage.setItem('yueState', JSON.stringify(state));
+}
+
+function initVocab() {
+  const grid = document.getElementById('vocabGrid');
+  grid.innerHTML = state.words.map((w, i) => `
+    <div class="vocab-card" onclick="practiceWord(${i})">
+      <div class="vocab-char">${w.char}</div>
+      <div class="vocab-pinyin">${w.pinyin}</div>
+      <div style="color:#666;font-size:1.1em;">${w.meaning}</div>
+      <button onclick="event.stopImmediatePropagation();speak('${w.char}');" style="margin-top:16px;background:#7c3aed;">🔊 聽發音</button>
+    </div>
+  `).join('');
+  state.completed.vocab = true;
+  updateHubStatus();
+}
+
+function practiceWord(idx) {
+  const w = state.words[idx];
+  speak(w.char);
+  showToast('已朗讀：' + w.char);
+}
+
+function startAssessment() {
+  state.assessmentIndex = 0;
+  state.assessmentScores = [];
+  renderAssessment();
+  goTo('assessment');
+}
+
+function renderAssessment() {
+  const container = document.getElementById('assessmentContent');
+  if (state.assessmentIndex >= state.words.length) {
+    finishAll();
+    return;
+  }
+  const w = state.words[state.assessmentIndex];
+  state.currentWord = w;
+  container.innerHTML = `
+    <div class="vocab-card" style="margin-bottom:30px;">
+      <div class="vocab-char">${w.char}</div>
+      <div class="vocab-pinyin">${w.pinyin}</div>
+      <div style="margin:12px 0;color:#666;">${w.meaning}</div>
+      <button onclick="speak('${w.char}')" style="background:#7c3aed;width:100%;">🔊 聽正確發音</button>
+    </div>
+    <button class="record-btn" onclick="startRecording()">🎤 開始朗讀（點擊錄音）</button>
+    <div id="recordingStatus" style="text-align:center;margin-top:20px;font-size:1.3em;color:#f59e0b;"></div>
+  `;
+}
+
+let recognition;
+function startRecording() {
+  const status = document.getElementById('recordingStatus');
+  if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+    status.innerHTML = '❌ 請用 Chrome（Safari 支援有限）';
+    return;
+  }
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SpeechRec();
+  recognition.lang = 'zh-HK';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  status.innerHTML = '🔴 錄音中… 請大聲朗讀詞彙';
+  try {
+    recognition.start();
+  } catch (e) {
+    console.error(e);
+    status.innerHTML = '❌ 無法啟動錄音，請檢查權限';
+  }
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript.trim();
+    status.innerHTML = `你講咗：${transcript}`;
+    scorePronunciation(transcript);
+  };
+  recognition.onerror = (event) => {
+    console.error('Speech error:', event.error);
+    let msg = '❌ 錄音出錯';
+    if (event.error === 'not-allowed') msg = '❌ 請允許麥克風權限';
+    else if (event.error === 'network') msg = '❌ 需要網絡連接';
+    else if (event.error === 'no-speech') msg = '❌ 冇聽到聲音，請大聲啲';
+    status.innerHTML = msg + '，請再試';
+  };
+  recognition.onend = () => {
+    if (status.innerHTML.includes('錄音中')) status.innerHTML = '錄音結束';
+  };
+}
+
+function scorePronunciation(transcript) {
+  const w = state.currentWord;
+  const target = w.target;
+  // 清理粵語常見標點/大小寫，提升聲調相容
+  const clean = (s) => s.replace(/[，。！？、\s]/g, "").toLowerCase();
+  const tClean = clean(target);
+  const uClean = clean(transcript);
+  const similarity = calculateSimilarity(uClean, tClean);
+  const bonus = (uClean.includes(tClean) || tClean.includes(uClean)) ? 20 : 0;
+  const aiScore = Math.min(100, Math.floor(similarity * 100 + bonus));
+  const feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 60 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
+
+  state.assessmentScores.push({ word: w.char, score: aiScore, transcript });
+  state.score += aiScore;
+
+  // show result
+  document.getElementById('assessmentContent').innerHTML = '';
+  goTo('result');
+  document.getElementById('resultWord').textContent = w.char;
+  document.getElementById('resultScore').textContent = aiScore + '/100';
+  document.getElementById('resultFeedback').textContent = feedback;
+  document.getElementById('resultAI').innerHTML = `AI 評分：${aiScore}分<br>你講：${transcript}<br>正確：${target}`;
+  
+  if (aiScore >= 80) {
+    showConfetti(12);
+  }
+}
+
+function calculateSimilarity(a, b) {
+  if (a === b) return 1;
+  const longer = a.length > b.length ? a : b;
+  const shorter = a.length > b.length ? b : a;
+  if (longer.length === 0) return 1;
+  return (longer.length - editDistance(longer, shorter)) / longer.length;
+}
+
+function editDistance(a, b) {
+  const dp = Array(b.length + 1).fill(null).map(() => Array(a.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[0][i] = i;
+  for (let j = 0; j <= b.length; j++) dp[j][0] = j;
+  for (let j = 1; j <= b.length; j++) {
+    for (let i = 1; i <= a.length; i++) {
+      dp[j][i] = Math.min(
+        dp[j-1][i] + 1,
+        dp[j][i-1] + 1,
+        dp[j-1][i-1] + (a[i-1] === b[j-1] ? 0 : 1)
+      );
+    }
+  }
+  return dp[b.length][a.length];
+}
+
+function nextAssessment() {
+  state.assessmentIndex++;
+  goTo('assessment');
+  renderAssessment();
+}
+
+function finishAll() {
+  state.completed.assessment = true;
+  const avg = Math.round(state.assessmentScores.reduce((s, x) => s + x.score, 0) / state.assessmentScores.length);
+  const container = document.getElementById('assessmentContent');
+  container.innerHTML = `
+    <div class="result-card" style="text-align:center;">
+      <h2>🏆 完成！</h2>
+      <div style="font-size:2.8em;color:#f59e0b;margin:20px 0;">${avg} / 100</div>
+      <div style="font-size:1.5em;">平均分：${avg}分<br>你好叻！</div>
+      <button onclick="printCert()" style="background:#f59e0b;width:100%;margin-top:30px;">📜 打印證書</button>
+      <button onclick="resetAll()" style="background:#666;width:100%;margin-top:12px;">重新開始</button>
+    </div>
+  `;
+  updateHubStatus();
+  showConfetti(25);
+  speak('你完成晒所有評估！做得真好！');
+}
+
+function printCert() {
+  const avg = Math.round(state.assessmentScores.reduce((s, x) => s + x.score, 0) / state.assessmentScores.length);
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html><head><title>證書</title><style>body{font-family:Microsoft JhengHei;text-align:center;padding:60px;background:#fffef0;color:#1a1a2e;}h1{color:#c5a26f;font-size:3em;border-bottom:6px solid #c5a26f;padding-bottom:20px;} .score{font-size:4em;color:#22c55e;margin:40px 0;}</style></head>
+    <body>
+      <h1>粵語朗讀評分證書</h1>
+      <p style="font-size:2em;">${state.name}</p>
+      <p style="font-size:1.8em;">已成功完成 SEN 粵語詞彙朗讀評估</p>
+      <div class="score">${avg} / 100</div>
+      <p style="font-size:1.6em;">日期：${new Date().toLocaleDateString('zh-HK')}</p>
+      <p style="margin-top:60px;font-size:1.4em;color:#c5a26f;">匡智張玉瓊晨暉學校 • SEN 學習工具</p>
+    </body></html>
+  `);
+  win.print();
+}
+
+function showConfetti(count) {
+  for (let i=0; i<count; i++) {
+    const c = document.createElement('div');
+    c.style.cssText = `position:fixed;top:-10px;left:${Math.random()*100}vw;width:12px;height:12px;background:${['#f59e0b','#22c55e','#7c3aed'][i%3]};border-radius:50%;z-index:99999;animation:fall 2.5s linear forwards`;
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 2600);
+  }
+}
+const style = document.createElement('style');
+style.textContent = `@keyframes fall { to { transform:translateY(100vh) rotate(720deg); opacity:0; } }`;
+document.head.appendChild(style);
+
+function resetAll() {
+  localStorage.removeItem('yueState');
+  location.reload();
+}
+
+// INIT
+function init() {
+  const saved = localStorage.getItem('yueState');
+  if (saved) {
+    try { Object.assign(state, JSON.parse(saved)); } catch(e){}
+  }
+  updateProgress();
+  // Auto load if name exists
+  if (state.name) {
+    document.getElementById('studentName').value = state.name;
+  }
+}
+init();
+</script>
+</body>
+</html>
