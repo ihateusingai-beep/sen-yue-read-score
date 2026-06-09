@@ -367,6 +367,10 @@ function startRecording() {
     if (event.error === 'not-allowed') msg = '❌ 請允許麥克風權限';
     else if (event.error === 'network') msg = '❌ 需要網絡連接';
     else if (event.error === 'no-speech') msg = '❌ 冇聽到聲音，請大聲啲';
+    else if (event.error === 'audio-capture') msg = '❌ 麥克風問題，請檢查';
+    else if (event.error === 'service-not-allowed') msg = '❌ 瀏覽器不支援，請用 Chrome';
+    else if (event.error === 'aborted') msg = '❌ 已取消，請再試';
+    else msg = '❌ 請大聲啲或換個安靜地方';
     status.innerHTML = msg + '，請再試';
   };
   recognition.onend = () => {
