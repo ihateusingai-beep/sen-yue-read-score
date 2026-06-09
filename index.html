@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>粵語朗讀評分 • SEN</title>
+<title>粵語朗讀評分</title>
 <!-- Transformers.js for on-device Whisper ASR (lazy loaded) -->
 <script type="module">
   // Just expose the CDN URL as a hint. Actual dynamic import happens on first use.
@@ -54,7 +54,7 @@ button:active { transform:scale(0.95); }
 <div id="home" class="page active">
   <div class="home-card" style="text-align:center;margin-top:60px;">
     <h1>粵語朗讀評分</h1>
-    <p style="font-size:1.2em;margin:10px 0 20px;">SEN 學生專用</p>
+    <p style="font-size:1.2em;margin:10px 0 20px;">即時 AI 發音評估</p>
 
     <!-- 登入模式：PIN -->
     <div id="loginPinMode">
@@ -118,176 +118,12 @@ button:active { transform:scale(0.95); }
         <div style="font-size:1.5em;font-weight:bold;">我的進度</div>
         <div style="opacity:0.8;">睇下我學過咩</div>
       </div>
-      <!-- 老師專用：Dashboard（學生 mode 隱藏） -->
-      <div class="hub-card" id="hubTeacherDashboard" style="display:none;" onclick="openTeacherDashboard();">
-        <div class="hub-icon">📊</div>
-        <div style="font-size:1.5em;font-weight:bold;">Dashboard</div>
-        <div style="opacity:0.8;">全班進度 + 報告</div>
-      </div>
     </div>
 
     <!-- 老師設定面板（預設折疊） -->
-    <div style="max-width:800px;margin:30px auto;text-align:center;">
-      <button onclick="toggleAdminPanel()" id="adminToggleBtn"
-        style="background:#555;font-size:1.1em;padding:12px 28px;border-radius:12px;">
-        🔧 老師設定 <span id="adminArrow">▼</span>
-      </button>
-      <div id="adminPanel" style="display:none;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);border-radius:16px;margin-top:16px;padding:20px;text-align:left;max-width:700px;margin-left:auto;margin-right:auto;">
-
-        <!-- Tab buttons -->
-        <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid rgba(255,255,255,0.2);padding-bottom:0;flex-wrap:wrap;">
-          <button id="tabSettingsBtn" onclick="switchAdminTab('settings')"
-            style="flex:1;min-width:90px;background:#7c3aed;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
-            📋 設定
-          </button>
-          <button id="tabEditBtn" onclick="switchAdminTab('edit')"
-            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
-            ✏️ 詞彙
-          </button>
-          <button id="tabStudentsBtn" onclick="switchAdminTab('students')"
-            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
-            👨‍🎓 學生
-          </button>
-          <button id="tabDashboardBtn" onclick="switchAdminTab('dashboard')"
-            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
-            📊 Dashboard
-          </button>
-          <button id="tabSystemBtn" onclick="switchAdminTab('system')"
-            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
-            ⚙️ 系統
-          </button>
-        </div>
-
-        <!-- Tab: Settings (toggle categories on/off) -->
-        <div id="tabSettingsContent">
-          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
-            開啟詞彙分類，學生學習和評估時只會出現已開啟的分類。
-          </p>
-          <div id="adminCategoryList"></div>
-          <button onclick="saveAdminSettings()" style="margin-top:16px;width:100%;background:#22c55e;font-size:1.1em;padding:14px;">
-            ✅ 儲存設定
-          </button>
-        </div>
-
-        <!-- Tab: Edit (CRUD + import/export) -->
-        <div id="tabEditContent" style="display:none;">
-          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
-            新增、修改、刪除詞彙同分類。改動會即時儲存。
-          </p>
-          <div id="editCategoryList"></div>
-          <button onclick="addNewCategory()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">
-            ＋ 新增分類
-          </button>
-
-          <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
-            <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">
-              📦 備份/分享：可將所有詞彙下載為 JSON 檔案，或從 JSON 檔案匯入。
-            </p>
-            <div style="display:flex;gap:8px;">
-              <button onclick="exportWordsJson()" style="flex:1;background:#0ea5e9;font-size:1em;padding:12px;min-height:50px;">
-                ⬇️ 匯出 JSON
-              </button>
-              <button onclick="document.getElementById('importFile').click()" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;min-height:50px;">
-                ⬆️ 匯入 JSON
-              </button>
-              <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importWordsJson(event)">
-            </div>
-            <button onclick="resetToDefaultJson()" style="margin-top:12px;width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">
-              ⚠️ 重設為 data/words.json 預設值
-            </button>
-          </div>
-        </div>
-
-        <!-- Tab: Students (管理 + 登入模式 + 進度匯出) -->
-        <div id="tabStudentsContent" style="display:none;">
-          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
-            管理學生帳號、設定 PIN / 頭像、揀登入模式。
-          </p>
-
-          <!-- 登入模式選擇 -->
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px;">
-            <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;font-size:1.05em;">🔑 登入模式</p>
-            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
-              <input type="radio" name="loginMode" value="pin" onchange="setLoginMode('pin')" style="width:24px;height:24px;accent-color:#f59e0b;">
-              <span>🔢 5 位數字 PIN</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
-              <input type="radio" name="loginMode" value="grid" onchange="setLoginMode('grid')" style="width:24px;height:24px;accent-color:#f59e0b;">
-              <span>🖼 名 + 頭像拼畫</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
-              <input type="radio" name="loginMode" value="both" onchange="setLoginMode('both')" style="width:24px;height:24px;accent-color:#f59e0b;">
-              <span>🔀 兩者皆可（顯示切換）</span>
-            </label>
-          </div>
-
-          <div id="studentList"></div>
-          <button onclick="addNewStudent()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">
-            ＋ 新增學生
-          </button>
-          <button onclick="reAddDemoStudent()" style="margin-top:8px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">
-            🌟 加返示範同學 (PIN 00000)
-          </button>
-
-          <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
-            <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">
-              📦 學生資料同進度可匯出 / 匯入，方便跨 iPad 同步。
-            </p>
-            <div style="display:flex;gap:8px;">
-              <button onclick="exportStudentsJson()" style="flex:1;background:#0ea5e9;font-size:1em;padding:12px;min-height:50px;">⬇️ 匯出</button>
-              <button onclick="document.getElementById('importStudentsFile').click()" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;min-height:50px;">⬆️ 匯入</button>
-              <input type="file" id="importStudentsFile" accept=".json,application/json" style="display:none;" onchange="importStudentsJson(event)">
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab: Dashboard (學生進度總覽) -->
-        <div id="tabDashboardContent" style="display:none;">
-          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
-            所有學生嘅練習進度摘要。
-          </p>
-          <div id="dashboardContent"></div>
-        </div>
-
-        <!-- Tab: System (ASR engine + 私隱設定) -->
-        <div id="tabSystemContent" style="display:none;">
-          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
-            揀學生評估用嘅語音引擎。所有引擎都免費；私隱視乎選擇。
-          </p>
-          <div id="asrEngineList"></div>
-
-          <!-- Whisper cache status (only shows when Whisper is / was used) -->
-          <div id="whisperCacheStatus" style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;display:none;">
-            <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📦 Whisper 模型狀態</p>
-            <div id="whisperCacheContent" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
-            <button onclick="preloadWhisper()" style="margin-top:10px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">
-              ⬇️ 預先下載 Whisper 模型
-            </button>
-            <button onclick="clearWhisperCache()" style="margin-top:8px;width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">
-              🗑 清除 Whisper 模型 cache
-            </button>
-            <p style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-top:8px;">
-              模型約 40MB。下載一次後會 cache，離線可用。
-            </p>
-          </div>
-
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:20px;">
-            <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📊 引擎使用統計</p>
-            <div id="asrStats" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
-          </div>
-
-          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;">
-            <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🔧 進階</p>
-            <button onclick="clearAudioBaselines()" style="background:#dc2626;width:100%;font-size:0.95em;padding:10px;min-height:44px;">
-              🗑 清除自訂引擎聲紋 baseline（重頭學起）
-            </button>
-            <p style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-top:8px;">
-              自訂模式會記住每個詞彙嘅聲音特徵做基線。清除後所有 baseline 重新建立。
-            </p>
-          </div>
-        </div>
-
-      </div>
+    <!-- 老師入口（細字，避免學生混淆） -->
+    <div style="margin-top:30px;padding-top:20px;border-top:1px solid rgba(255,255,255,0.15);text-align:center;">
+      <button onclick="enterTeacherMode()" style="background:transparent;color:rgba(255,255,255,0.5);font-size:0.9em;padding:8px 16px;min-height:36px;border:1px solid rgba(255,255,255,0.2);border-radius:8px;">🔧 老師模式</button>
     </div>
 
     <button onclick="goTo('home')" style="margin-top:20px;background:#666;">🏠 返回首頁</button>
@@ -314,6 +150,28 @@ button:active { transform:scale(0.95); }
   <div id="myProgressContent" style="max-width:800px;margin:40px auto;padding:0 20px;"></div>
 </div>
 
+<!-- TEACHER WORKSPACE (isolated from student flow) -->
+<div id="teacher" class="page" style="background:linear-gradient(135deg,#1a1a2e,#2d1b4e);min-height:100vh;">
+  <div style="max-width:900px;margin:0 auto;padding:20px;">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+      <h1 style="color:#f59e0b;font-size:1.8em;margin:0;">🔧 老師工作台</h1>
+      <div style="flex:1;"></div>
+      <button onclick="exitTeacherMode()" style="background:#666;font-size:1em;padding:10px 20px;min-height:44px;border-radius:10px;">🚪 退出</button>
+    </div>
+    <!-- Tab nav -->
+    <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid rgba(255,255,255,0.2);flex-wrap:wrap;">
+      <button id="tchTabDashboardBtn" onclick="tchSwitchTab('dashboard')" style="flex:1;min-width:120px;background:#7c3aed;font-size:1em;padding:12px;border-radius:8px 8px 0 0;min-height:48px;">📊 Dashboard</button>
+      <button id="tchTabStudentsBtn" onclick="tchSwitchTab('students')" style="flex:1;min-width:120px;background:#444;font-size:1em;padding:12px;border-radius:8px 8px 0 0;min-height:48px;">👨‍🎓 學生</button>
+      <button id="tchTabEditBtn" onclick="tchSwitchTab('edit')" style="flex:1;min-width:120px;background:#444;font-size:1em;padding:12px;border-radius:8px 8px 0 0;min-height:48px;">✏️ 詞彙</button>
+      <button id="tchTabSettingsBtn" onclick="tchSwitchTab('settings')" style="flex:1;min-width:120px;background:#444;font-size:1em;padding:12px;border-radius:8px 8px 0 0;min-height:48px;">⚙️ 系統</button>
+    </div>
+    <div id="tchTabDashboard" class="tch-tab-content"></div>
+    <div id="tchTabStudents" class="tch-tab-content" style="display:none;"></div>
+    <div id="tchTabEdit" class="tch-tab-content" style="display:none;"></div>
+    <div id="tchTabSettings" class="tch-tab-content" style="display:none;"></div>
+  </div>
+</div>
+
 <!-- RESULT -->
 <div id="result" class="page">
   <div class="result-card" style="text-align:center;">
@@ -322,7 +180,10 @@ button:active { transform:scale(0.95); }
     <div class="score" id="resultScore"></div>
     <div id="resultFeedback" style="font-size:1.4em;margin:20px 0;"></div>
     <div id="resultAI" style="background:#f3e8ff;padding:16px;border-radius:16px;margin:20px 0;"></div>
-    <button onclick="nextAssessment()" style="background:#22c55e;width:100%;margin-top:20px;">下一個詞彙 →</button>
+    <div style="display:flex;gap:8px;margin-top:20px;">
+      <button onclick="retryCurrentWord()" style="flex:1;background:#f59e0b;font-size:1.1em;padding:14px;">🔄 重試</button>
+      <button onclick="nextAssessment()" style="flex:1;background:#22c55e;font-size:1.1em;padding:14px;">下一個 →</button>
+    </div>
   </div>
 </div>
 
@@ -594,7 +455,6 @@ function goTo(page) {
       }
       ind.textContent = `🎙 評估引擎：${e.name} ${e.privacyEmoji}${extra}`;
     }
-    _updateHubForMode();
   }
 }
 
@@ -1046,6 +906,17 @@ function nextAssessment() {
   }
 }
 
+function retryCurrentWord() {
+  // Re-attempt the same word without advancing index.
+  // _recordAttempt will be called again on next scorePronunciation.
+  goTo('assessment');
+  if (state.filteredWords) {
+    renderFilteredAssessment();
+  } else {
+    renderAssessment();
+  }
+}
+
 function finishAll() {
   // Guard: only mark complete if student actually did some attempts
   if (state.assessmentScores.length === 0) return;
@@ -1078,10 +949,10 @@ function printCert() {
     <body>
       <h1>粵語朗讀評分證書</h1>
       <p style="font-size:2em;">${studentName}</p>
-      <p style="font-size:1.8em;">已成功完成 SEN 粵語詞彙朗讀評估</p>
+      <p style="font-size:1.8em;">已成功完成粵語詞彙朗讀評估</p>
       <div class="score">${avg} / 100</div>
       <p style="font-size:1.6em;">日期：${new Date().toLocaleDateString('zh-HK')}</p>
-      <p style="margin-top:60px;font-size:1.4em;color:#c5a26f;">匡智張玉瓊晨暉學校 • SEN 學習工具</p>
+      <p style="margin-top:60px;font-size:1.4em;color:#c5a26f;">匡智張玉瓊晨輝學校 • 粵語朗讀評分</p>
     </body></html>
   `);
   win.print();
@@ -1108,11 +979,6 @@ function showTeacherRecords() {
 // ================== STUDENT "MY PROGRESS" PAGE (visual, low-text) ==================
 // Designed for SEN students: minimal text, maximum visual cues (emoji + colors + icons)
 function showMyProgress() {
-  if (state.mode === 'teacher' && !state.currentStudentId) {
-    switchAdminTab('dashboard');
-    toggleAdminPanel();
-    return;
-  }
   const sid = state.currentStudentId || (state.students[0] ? state.students[0].id : null);
   if (!sid) { showToast('⚠️ 尚未有學生資料'); return; }
   const s = state.students.find(x => x.id === sid);
@@ -1432,39 +1298,123 @@ function _loginStudent(student) {
   localStorage.setItem('yueLastStudentId', student.id);
   document.getElementById('hubGreeting').textContent = `👋 ${student.avatar || '🌟'} ${student.name}，準備好未？`;
   _rebuildWords();
-  _updateHubForMode();
   goTo('hub');
   showToast(`歡迎返嚟，${student.name}！`);
 }
 
 function enterTeacherMode() {
   state.mode = 'teacher';
-  // teacher skips student login
-  _updateHubForMode();
-  goTo('hub');
-  document.getElementById('hubGreeting').textContent = '🔧 老師模式';
+  goTo('teacher');
+  tchSwitchTab('dashboard');
   showToast('🔧 老師模式');
 }
 
-function _updateHubForMode() {
-  const dashCard = document.getElementById('hubTeacherDashboard');
-  if (dashCard) dashCard.style.display = (state.mode === 'teacher') ? 'block' : 'none';
+function exitTeacherMode() {
+  state.mode = 'student';
+  goTo('home');
+  showToast('👋 已退出老師模式');
 }
 
-function openTeacherDashboard() {
-  // Switch to teacher panel, then jump to dashboard tab
-  if (state.mode !== 'teacher') {
-    state.mode = 'teacher';
-    _updateHubForMode();
-  }
-  // Open admin panel
-  const panel = document.getElementById('adminPanel');
-  const arrow = document.getElementById('adminArrow');
-  if (panel && panel.style.display === 'none') {
-    panel.style.display = 'block';
-    if (arrow) arrow.textContent = '▲';
-  }
-  switchAdminTab('dashboard');
+function tchSwitchTab(tab) {
+  const tabs = ['dashboard', 'students', 'edit', 'settings'];
+  tabs.forEach(t => {
+    const btn = document.getElementById('tchTab' + t.charAt(0).toUpperCase() + t.slice(1) + 'Btn');
+    const content = document.getElementById('tchTab' + t.charAt(0).toUpperCase() + t.slice(1));
+    if (btn) btn.style.background = (t === tab) ? '#7c3aed' : '#444';
+    if (content) content.style.display = (t === tab) ? 'block' : 'none';
+  });
+  if (tab === 'dashboard') renderTeacherDashboard();
+  if (tab === 'students') renderTeacherStudents();
+  if (tab === 'edit') renderTeacherEdit();
+  if (tab === 'settings') renderTeacherSettings();
+}
+
+function renderTeacherDashboard() {
+  document.getElementById('tchTabDashboard').innerHTML = '<div id="dashboardContent"></div>';
+  renderDashboard();
+}
+
+function renderTeacherStudents() {
+  document.getElementById('tchTabStudents').innerHTML = `
+    <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">管理學生帳號、設定 PIN / 頭像、揀登入模式。</p>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;font-size:1.05em;">🔑 登入模式</p>
+      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
+        <input type="radio" name="loginMode" value="pin" onchange="setLoginMode('pin')" style="width:24px;height:24px;accent-color:#f59e0b;">
+        <span>🔢 5 位數字 PIN</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
+        <input type="radio" name="loginMode" value="grid" onchange="setLoginMode('grid')" style="width:24px;height:24px;accent-color:#f59e0b;">
+        <span>🖼 名 + 頭像拼畫</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
+        <input type="radio" name="loginMode" value="both" onchange="setLoginMode('both')" style="width:24px;height:24px;accent-color:#f59e0b;">
+        <span>🔀 兩者皆可（顯示切換）</span>
+      </label>
+    </div>
+    <div id="studentList"></div>
+    <button onclick="addNewStudent()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">＋ 新增學生</button>
+    <button onclick="reAddDemoStudent()" style="margin-top:8px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">🌟 加返示範同學 (PIN 00000)</button>
+    <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
+      <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">📦 學生資料同進度可匯出 / 匯入，方便跨 iPad 同步。</p>
+      <div style="display:flex;gap:8px;">
+        <button onclick="exportStudentsJson()" style="flex:1;background:#0ea5e9;font-size:1em;padding:12px;min-height:50px;">⬇️ 匯出</button>
+        <button onclick="document.getElementById('importStudentsFile').click()" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;min-height:50px;">⬆️ 匯入</button>
+        <input type="file" id="importStudentsFile" accept=".json,application/json" style="display:none;" onchange="importStudentsJson(event)">
+      </div>
+    </div>
+  `;
+  renderStudentList();
+}
+
+function renderTeacherEdit() {
+  document.getElementById('tchTabEdit').innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;">
+        <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;">📋 設定（開啟分類）</p>
+        <div id="adminCategoryList"></div>
+        <button onclick="saveAdminSettings()" style="margin-top:12px;width:100%;background:#22c55e;font-size:1.05em;padding:12px;">✅ 儲存</button>
+      </div>
+      <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;">
+        <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;">✏️ 詞彙（CRUD）</p>
+        <div id="editCategoryList" style="max-height:500px;overflow:auto;"></div>
+        <button onclick="addNewCategory()" style="margin-top:8px;width:100%;background:#7c3aed;font-size:1em;padding:10px;">＋ 新增分類</button>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📦 備份/分享</p>
+      <div style="display:flex;gap:8px;margin-bottom:8px;">
+        <button onclick="exportWordsJson()" style="flex:1;background:#0ea5e9;font-size:1em;padding:12px;min-height:50px;">⬇️ 匯出 JSON</button>
+        <button onclick="document.getElementById('importFile').click()" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;min-height:50px;">⬆️ 匯入 JSON</button>
+        <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importWordsJson(event)">
+      </div>
+      <button onclick="resetToDefaultJson()" style="width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">⚠️ 重設為 data/words.json 預設值</button>
+    </div>
+  `;
+  renderAdminCategoryList();
+  renderEditCategoryList();
+}
+
+function renderTeacherSettings() {
+  document.getElementById('tchTabSettings').innerHTML = `
+    <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">揀學生評估用嘅語音引擎。所有引擎都免費；私隱視乎選擇。</p>
+    <div id="asrEngineList"></div>
+    <div id="whisperCacheStatus" style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;display:none;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📦 Whisper 模型狀態</p>
+      <div id="whisperCacheContent" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
+      <button onclick="preloadWhisper()" style="margin-top:10px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">⬇️ 預先下載</button>
+      <button onclick="clearWhisperCache()" style="margin-top:8px;width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">🗑 清除 cache</button>
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:20px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📊 引擎使用統計</p>
+      <div id="asrStats" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🔧 進階</p>
+      <button onclick="clearAudioBaselines()" style="background:#dc2626;width:100%;font-size:0.95em;padding:10px;min-height:44px;">🗑 清除自訂引擎聲紋 baseline</button>
+    </div>
+  `;
+  renderAsrEngineList();
 }
 
 // ================== STUDENT CRUD ==================
@@ -2447,7 +2397,7 @@ function exportStudentReport(studentId) {
     <h1>${s.avatar || '🌟'} ${s.name} — 粵語朗讀練習報告</h1>
     <div class="meta">
       報告產生日期：${new Date().toLocaleString('zh-HK')}<br>
-      學校：匡智張玉瓊晨暉學校<br>
+      學校：匡智張玉瓊晨輝學校<br>
       評估引擎：${state.asrEngine}
     </div>
     <div class="stats">
@@ -2471,7 +2421,7 @@ function exportStudentReport(studentId) {
       </tbody>
     </table>`}
     <div class="footer">
-      匡智張玉瓊晨暉學校 • SEN 粵語朗讀評分系統<br>
+      匡智張玉瓊晨輝學校 • 粵語朗讀評分系統<br>
       本報告由「粵語朗讀評分」App 自動產生
     </div>
   </body></html>`);
@@ -2506,7 +2456,7 @@ function exportClassReport() {
     <h1>📊 全班粵語朗讀練習報告</h1>
     <div class="meta">
       報告產生日期：${new Date().toLocaleString('zh-HK')}<br>
-      學校：匡智張玉瓊晨暉學校 • 學生人數：${state.students.length} • 總練習次數：${totalAttempts}
+      學校：匡智張玉瓊晨輝學校 • 學生人數：${state.students.length} • 總練習次數：${totalAttempts}
     </div>
     <h2>👨‍🎓 學生表現一覽</h2>
     <table>
@@ -2536,7 +2486,7 @@ function exportClassReport() {
       </tbody>
     </table>`}
     <div class="footer">
-      匡智張玉瓊晨暉學校 • SEN 粵語朗讀評分系統<br>
+      匡智張玉瓊晨輝學校 • 粵語朗讀評分系統<br>
       本報告由「粵語朗讀評分」App 自動產生
     </div>
   </body></html>`);
