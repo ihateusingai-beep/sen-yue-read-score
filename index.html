@@ -107,11 +107,27 @@ let state = {
   completed: { vocab: false, assessment: false },
   autoTTS: true,
   words: [
-    { char:'動如脫兔', pinyin:'duhng yuh tyut tou', meaning:'形容行動好快', target:'動如脫兔' },
-    { char:'一心一意', pinyin:'yat sam yat yi', meaning:'專心做一件事', target:'一心一意' },
-    { char:'馬到成功', pinyin:'ma dou sing gung', meaning:'事情好快成功', target:'馬到成功' },
-    { char:'守株待兔', pinyin:'sau jyu doi tou', meaning:'等機會', target:'守株待兔' },
-    { char:'兔死狐悲', pinyin:'tou sei wu bi', meaning:'見到別人出事自己都傷心', target:'兔死狐悲' }
+    // 季節
+    { char:'春天', pinyin:'cheun tin', meaning:'春季', target:'春天', category:'季節' },
+    { char:'夏天', pinyin:'ha tin', meaning:'夏季', target:'夏天', category:'季節' },
+    { char:'秋天', pinyin:'chau tin', meaning:'秋季', target:'秋天', category:'季節' },
+    { char:'冬天', pinyin:'dung tin', meaning:'冬季', target:'冬天', category:'季節' },
+    { char:'季節', pinyin:'gwai jit', meaning:'四季變化', target:'季節', category:'季節' },
+    { char:'北風', pinyin:'bak fung', meaning:'北方吹嚟嘅風', target:'北風', category:'季節' },
+    { char:'雪花', pinyin:'suet fa', meaning:'冬天嘅雪', target:'雪花', category:'季節' },
+    { char:'黃葉', pinyin:'wong yip', meaning:'秋天落葉', target:'黃葉', category:'季節' },
+    // 活動
+    { char:'蝴蝶', pinyin:'woo dip', meaning:'美麗嘅飛蟲', target:'蝴蝶', category:'活動' },
+    { char:'游泳', pinyin:'yau wing', meaning:'喺水度游', target:'游泳', category:'活動' },
+    { char:'燒烤', pinyin:'siu fu', meaning:'戶外烤肉', target:'燒烤', category:'活動' },
+    { char:'野餐', pinyin:'ye chan', meaning:'戶外食嘢', target:'野餐', category:'活動' },
+    { char:'火鍋', pinyin:'fo wo', meaning:'冬天熱辣辣', target:'火鍋', category:'活動' },
+    // 聲音
+    { char:'滴滴答答', pinyin:'dik dik daap daap', meaning:'雨聲/鐘聲', target:'滴滴答答', category:'聲音' },
+    { char:'嘩啦嘩啦', pinyin:'wa la wa la', meaning:'水流聲', target:'嘩啦嘩啦', category:'聲音' },
+    { char:'叮叮咚咚', pinyin:'ding ding dung dung', meaning:'演奏樂器', target:'叮叮咚咚', category:'聲音' },
+    { char:'轟隆轟隆', pinyin:'hung lung hung lung', meaning:'火車聲', target:'轟隆轟隆', category:'聲音' },
+    { char:'呼呼', pinyin:'fu fu', meaning:'風聲', target:'呼呼', category:'聲音' }
   ],
   assessmentIndex: 0,
   assessmentScores: []
