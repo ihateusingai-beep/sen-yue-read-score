@@ -421,7 +421,11 @@ function editDistance(a, b) {
 function nextAssessment() {
   state.assessmentIndex++;
   goTo('assessment');
-  renderAssessment();
+  if (state.filteredWords) {
+    renderFilteredAssessment();
+  } else {
+    renderAssessment();
+  }
 }
 
 function finishAll() {
@@ -440,6 +444,8 @@ function finishAll() {
   updateHubStatus();
   showConfetti(25);
   speak('你完成晒所有評估！做得真好！');
+  // clean filter for next time
+  delete state.filteredWords;
 }
 
 function printCert() {
