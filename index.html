@@ -1105,19 +1105,16 @@ function showTeacherRecords() {
   toggleAdminPanel();
 }
 
-// ================== STUDENT "MY PROGRESS" PAGE ==================
+// ================== STUDENT "MY PROGRESS" PAGE (visual, low-text) ==================
+// Designed for SEN students: minimal text, maximum visual cues (emoji + colors + icons)
 function showMyProgress() {
-  // Teacher viewing — open admin dashboard tab
   if (state.mode === 'teacher' && !state.currentStudentId) {
     switchAdminTab('dashboard');
     toggleAdminPanel();
     return;
   }
   const sid = state.currentStudentId || (state.students[0] ? state.students[0].id : null);
-  if (!sid) {
-    showToast('⚠️ 尚未有學生資料');
-    return;
-  }
+  if (!sid) { showToast('⚠️ 尚未有學生資料'); return; }
   const s = state.students.find(x => x.id === sid);
   if (!s) return;
   const p = state.progress[sid] || { byWord: {}, scores: [], totalAttempts: 0 };
@@ -1128,70 +1125,96 @@ function showMyProgress() {
   const stars = Math.min(5, Math.floor(mastered.length / 5));
   const totalLearned = mastered.length + practicing.length + struggling.length;
   const totalAvailable = state.words.length;
+  const streak = _calcStreak(p.scores || []);
+  const dailyCounts = _buildDailyCounts(p.scores || [], 7);
+
+  // Map word → emoji for visual list
+  const emojiFor = (word) => {
+    const m = { '春天':'🌸', '夏天':'🌞', '秋天':'🍂', '冬天':'❄️', '季節':'🌗', '北風':'🌬️', '雪花':'❄️', '黃葉':'🍁',
+      '蝴蝶':'🦋', '游泳':'🏊', '燒烤':'🔥', '野餐':'🧺', '火鍋':'🍲',
+      '滴滴答答':'💧', '嘩啦嘩啦':'🌊', '叮叮咚咚':'🎵', '轟隆轟隆':'🚂', '呼呼':'💨' };
+    return m[word] || '📝';
+  };
 
   const container = document.getElementById('myProgressContent');
   container.innerHTML = `
-    <div style="text-align:center;padding:20px 0;">
-      <div style="font-size:5em;line-height:1;">${s.avatar || '🌟'}</div>
-      <h1 style="color:#f59e0b;font-size:2.2em;margin:8px 0;">${s.name}</h1>
-      <div style="font-size:2.5em;margin:12px 0;color:#f59e0b;letter-spacing:4px;">${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
-      <div style="font-size:1.1em;color:rgba(255,255,255,0.8);margin-bottom:20px;">
-        ${totalLearned === 0
-          ? '未開始練習，加油！'
-          : `已認識 ${totalLearned} / ${totalAvailable} 個詞彙`}
+    <div style="text-align:center;padding:16px 0 8px;">
+      <div style="font-size:6em;line-height:1;">${s.avatar || '🌟'}</div>
+      <h1 style="color:#f59e0b;font-size:2em;margin:6px 0;">${s.name}</h1>
+      <div style="font-size:2.5em;margin:8px 0;letter-spacing:6px;">${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0;">
+      <div style="background:linear-gradient(135deg,rgba(124,58,237,0.4),rgba(124,58,237,0.2));border-radius:20px;padding:18px 8px;text-align:center;border:2px solid #7c3aed;">
+        <div style="font-size:2.8em;line-height:1;">🎤</div>
+        <div style="font-size:2.2em;font-weight:bold;color:#fff;margin:4px 0;">${p.totalAttempts || 0}</div>
+        <div style="font-size:0.85em;color:rgba(255,255,255,0.85);">練咗</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(245,158,11,0.4),rgba(245,158,11,0.2));border-radius:20px;padding:18px 8px;text-align:center;border:2px solid #f59e0b;">
+        <div style="font-size:2.8em;line-height:1;">${avg >= 80 ? '🌟' : avg >= 60 ? '👍' : '💪'}</div>
+        <div style="font-size:2.2em;font-weight:bold;color:#fff;margin:4px 0;">${avg}</div>
+        <div style="font-size:0.85em;color:rgba(255,255,255,0.85);">分數</div>
+      </div>
+      <div style="background:linear-gradient(135deg,rgba(34,197,94,0.4),rgba(34,197,94,0.2));border-radius:20px;padding:18px 8px;text-align:center;border:2px solid #22c55e;">
+        <div style="font-size:2.8em;line-height:1;">🏆</div>
+        <div style="font-size:2.2em;font-weight:bold;color:#fff;margin:4px 0;">${mastered.length}</div>
+        <div style="font-size:0.85em;color:rgba(255,255,255,0.85);">識讀</div>
       </div>
     </div>
 
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0;">
-      <div style="background:rgba(124,58,237,0.4);border-radius:16px;padding:18px;text-align:center;border:2px solid #7c3aed;">
-        <div style="font-size:2.5em;font-weight:bold;color:#fff;">${p.totalAttempts || 0}</div>
-        <div style="font-size:0.95em;color:rgba(255,255,255,0.85);margin-top:4px;">練習次數</div>
-      </div>
-      <div style="background:rgba(245,158,11,0.4);border-radius:16px;padding:18px;text-align:center;border:2px solid #f59e0b;">
-        <div style="font-size:2.5em;font-weight:bold;color:#fff;">${avg}</div>
-        <div style="font-size:0.95em;color:rgba(255,255,255,0.85);margin-top:4px;">平均分</div>
-      </div>
-      <div style="background:rgba(34,197,94,0.4);border-radius:16px;padding:18px;text-align:center;border:2px solid #22c55e;">
-        <div style="font-size:2.5em;font-weight:bold;color:#fff;">${mastered.length}</div>
-        <div style="font-size:0.95em;color:rgba(255,255,255,0.85);margin-top:4px;">已掌握</div>
-      </div>
-    </div>
+    ${streak > 0 ? `
+      <div style="background:linear-gradient(90deg,rgba(239,68,68,0.3),rgba(245,158,11,0.3));border-radius:16px;padding:14px;margin:12px 0;text-align:center;border:2px solid rgba(239,68,68,0.5);">
+        <div style="font-size:1.5em;">🔥 <b>${streak} 日</b> streak</div>
+      </div>` : ''}
 
     ${mastered.length > 0 ? `
-      <div style="background:rgba(34,197,94,0.15);border:2px solid rgba(34,197,94,0.4);border-radius:16px;padding:18px;margin:16px 0;">
-        <h2 style="color:#22c55e;font-size:1.3em;margin-bottom:12px;">✅ 我識讀嘅詞彙（${mastered.length}）</h2>
+      <div style="background:rgba(34,197,94,0.15);border:2px solid rgba(34,197,94,0.5);border-radius:16px;padding:16px;margin:12px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="font-size:2em;">✅</div>
+          <div style="font-size:1.3em;font-weight:bold;color:#22c55e;">${mastered.length}</div>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${mastered.map(([w, _]) => `<span style="background:rgba(34,197,94,0.4);padding:8px 16px;border-radius:20px;font-size:1.15em;font-weight:bold;">${w}</span>`).join('')}
+          ${mastered.map(([w, _]) => `<div style="background:rgba(34,197,94,0.3);border:2px solid #22c55e;border-radius:16px;padding:8px 14px;font-size:1.3em;font-weight:bold;display:flex;align-items:center;gap:6px;"><span style="font-size:1.3em;">${emojiFor(w)}</span><span>${w}</span></div>`).join('')}
         </div>
       </div>` : ''}
 
     ${practicing.length > 0 ? `
-      <div style="background:rgba(245,158,11,0.15);border:2px solid rgba(245,158,11,0.4);border-radius:16px;padding:18px;margin:16px 0;">
-        <h2 style="color:#f59e0b;font-size:1.3em;margin-bottom:12px;">👍 仲要加油（${practicing.length}）</h2>
+      <div style="background:rgba(245,158,11,0.15);border:2px solid rgba(245,158,11,0.5);border-radius:16px;padding:16px;margin:12px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="font-size:2em;">👍</div>
+          <div style="font-size:1.3em;font-weight:bold;color:#f59e0b;">${practicing.length}</div>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${practicing.map(([w, _]) => `<span style="background:rgba(245,158,11,0.4);padding:8px 16px;border-radius:20px;font-size:1.15em;font-weight:bold;">${w}</span>`).join('')}
+          ${practicing.map(([w, _]) => `<div style="background:rgba(245,158,11,0.3);border:2px solid #f59e0b;border-radius:16px;padding:8px 14px;font-size:1.3em;font-weight:bold;display:flex;align-items:center;gap:6px;"><span style="font-size:1.3em;">${emojiFor(w)}</span><span>${w}</span></div>`).join('')}
         </div>
       </div>` : ''}
 
     ${struggling.length > 0 ? `
-      <div style="background:rgba(239,68,68,0.15);border:2px solid rgba(239,68,68,0.4);border-radius:16px;padding:18px;margin:16px 0;">
-        <h2 style="color:#ef4444;font-size:1.3em;margin-bottom:12px;">💪 我會加油（${struggling.length}）</h2>
+      <div style="background:rgba(239,68,68,0.15);border:2px solid rgba(239,68,68,0.5);border-radius:16px;padding:16px;margin:12px 0;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+          <div style="font-size:2em;">💪</div>
+          <div style="font-size:1.3em;font-weight:bold;color:#ef4444;">${struggling.length}</div>
+        </div>
         <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${struggling.map(([w, _]) => `<span style="background:rgba(239,68,68,0.4);padding:8px 16px;border-radius:20px;font-size:1.15em;font-weight:bold;">${w}</span>`).join('')}
+          ${struggling.map(([w, _]) => `<div style="background:rgba(239,68,68,0.3);border:2px solid #ef4444;border-radius:16px;padding:8px 14px;font-size:1.3em;font-weight:bold;display:flex;align-items:center;gap:6px;"><span style="font-size:1.3em;">${emojiFor(w)}</span><span>${w}</span></div>`).join('')}
         </div>
       </div>` : ''}
 
     ${totalLearned === 0 ? `
-      <div style="background:rgba(255,255,255,0.05);border-radius:16px;padding:30px 20px;margin:20px 0;text-align:center;color:rgba(255,255,255,0.7);">
-        <div style="font-size:3em;margin-bottom:12px;">🎤</div>
-        <p style="font-size:1.2em;margin-bottom:8px;">撳下面掣開始練習！</p>
-        <p>讀出詞彙就會記低喺度</p>
+      <div style="background:rgba(255,255,255,0.05);border-radius:20px;padding:40px 20px;margin:20px 0;text-align:center;">
+        <div style="font-size:5em;margin-bottom:12px;">🎤</div>
+        <div style="font-size:1.3em;color:rgba(255,255,255,0.8);">撳掣開始啦！</div>
       </div>
     ` : ''}
 
-    <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px;align-items:center;">
-      <button onclick="goTo('vocab');initVocab();" style="background:#22c55e;font-size:1.15em;padding:16px 32px;width:100%;max-width:340px;border-radius:16px;">📚 繼續練習</button>
-      <button onclick="goTo('hub');" style="background:#666;font-size:1.05em;padding:14px 28px;width:100%;max-width:340px;border-radius:16px;">🏠 返回中心</button>
+    <div style="background:rgba(255,255,255,0.05);border-radius:16px;padding:14px;margin:16px 0;">
+      <div style="font-size:1em;color:rgba(255,255,255,0.7);margin-bottom:8px;">📅 過去 7 日</div>
+      ${_renderStripHeatmap(dailyCounts, 7)}
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:20px;align-items:center;">
+      <button onclick="goTo('vocab');initVocab();" style="background:linear-gradient(135deg,#22c55e,#16a34a);font-size:1.4em;padding:18px 32px;width:100%;max-width:340px;border-radius:20px;box-shadow:0 4px 12px rgba(34,197,94,0.4);">📚 練 習</button>
+      <button onclick="goTo('hub');" style="background:#666;font-size:1.05em;padding:14px 28px;width:100%;max-width:340px;border-radius:20px;">🏠 返 去</button>
     </div>
   `;
   goTo('myProgress');
@@ -1812,6 +1835,7 @@ function renderDashboard() {
   };
   const allScores = Object.values(state.progress).flatMap(p => filterScores(p.scores));
   const totalAttempts = allScores.length;
+  const avgScore = allScores.length > 0 ? Math.round(allScores.reduce((s, x) => s + x.score, 0) / allScores.length) : 0;
 
   let html = `
     <div style="display:flex;gap:6px;margin-bottom:14px;background:rgba(0,0,0,0.2);border-radius:10px;padding:4px;">
@@ -1819,55 +1843,153 @@ function renderDashboard() {
       <button onclick="_dashFilter='month';renderDashboard();" style="flex:1;background:${_dashFilter==='month'?'#7c3aed':'transparent'};font-size:0.95em;padding:8px;min-height:40px;border-radius:8px;">本月</button>
       <button onclick="_dashFilter='week';renderDashboard();" style="flex:1;background:${_dashFilter==='week'?'#7c3aed':'transparent'};font-size:0.95em;padding:8px;min-height:40px;border-radius:8px;">本週</button>
     </div>
-    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
-      <div style="background:rgba(124,58,237,0.3);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:2.2em;font-weight:bold;">${state.students.length}</div>
-        <div style="font-size:0.9em;opacity:0.8;">學生人數</div>
+
+    <!-- 4 summary cards -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px;">
+      <div style="background:rgba(124,58,237,0.3);border-radius:10px;padding:12px 6px;text-align:center;">
+        <div style="font-size:1.9em;font-weight:bold;">${state.students.length}</div>
+        <div style="font-size:0.8em;opacity:0.85;">學生</div>
       </div>
-      <div style="background:rgba(34,197,94,0.3);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:2.2em;font-weight:bold;">${totalAttempts}</div>
-        <div style="font-size:0.9em;opacity:0.8;">練習次數</div>
+      <div style="background:rgba(34,197,94,0.3);border-radius:10px;padding:12px 6px;text-align:center;">
+        <div style="font-size:1.9em;font-weight:bold;">${totalAttempts}</div>
+        <div style="font-size:0.8em;opacity:0.85;">練習次數</div>
       </div>
-      <div style="background:rgba(245,158,11,0.3);border-radius:12px;padding:14px;text-align:center;">
-        <div style="font-size:2.2em;font-weight:bold;">${totalWords}</div>
-        <div style="font-size:0.9em;opacity:0.8;">可練習詞彙</div>
+      <div style="background:rgba(245,158,11,0.3);border-radius:10px;padding:12px 6px;text-align:center;">
+        <div style="font-size:1.9em;font-weight:bold;">${totalWords}</div>
+        <div style="font-size:0.8em;opacity:0.85;">詞彙</div>
+      </div>
+      <div style="background:rgba(59,130,246,0.3);border-radius:10px;padding:12px 6px;text-align:center;">
+        <div style="font-size:1.9em;font-weight:bold;">${avgScore}</div>
+        <div style="font-size:0.8em;opacity:0.85;">平均分</div>
       </div>
     </div>
   `;
 
-  // ===== Class-wide weak spots =====
+  // ===== Mastery Funnel (4 stages) =====
+  if (totalAttempts > 0) {
+    const totalSlots = state.words.length * state.students.length;
+    const masteredCount = Object.values(state.progress).reduce((s, p) => s + Object.values(p.byWord || {}).filter(w => w.bestScore >= 80).length, 0);
+    const practicingCount = Object.values(state.progress).reduce((s, p) => s + Object.values(p.byWord || {}).filter(w => w.bestScore >= 60 && w.bestScore < 80).length, 0);
+    const touchedCount = Object.values(state.progress).reduce((s, p) => s + Object.values(p.byWord || {}).filter(w => w.attempts > 0 && w.bestScore < 60).length, 0);
+    const untouchedCount = Math.max(0, totalSlots - masteredCount - practicingCount - touchedCount);
+    const funnelStages = [
+      { label: '未接觸', count: untouchedCount, color: 'rgba(255,255,255,0.3)' },
+      { label: '接觸過', count: touchedCount, color: '#ef4444' },
+      { label: '進步中', count: practicingCount, color: '#f59e0b' },
+      { label: '已掌握', count: masteredCount, color: '#22c55e' }
+    ];
+    html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📊 Mastery 漏斗</p>
+      <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-bottom:10px;">全班 ${state.students.length} 學生 × ${state.words.length} 詞彙 = ${totalSlots} 個進度</div>
+      ${_renderFunnel(funnelStages)}
+    </div>`;
+  }
+
+  // ===== Category breakdown bar chart =====
+  if (totalAttempts > 0) {
+    const categoryStats = state.categories.filter(c => c.enabled).map(cat => {
+      const wordNames = new Set(cat.words.map(w => w.char));
+      const catScores = allScores.filter(s => wordNames.has(s.word));
+      const avg = catScores.length > 0 ? Math.round(catScores.reduce((sum, x) => sum + x.score, 0) / catScores.length) : 0;
+      return { label: cat.label, value: avg, count: catScores.length };
+    });
+    if (categoryStats.length > 0) {
+      html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
+        <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📚 分類細分</p>
+        ${_renderBarChart(categoryStats, 100)}
+      </div>`;
+    }
+  }
+
+  // ===== 30-day class average line chart =====
+  if (totalAttempts > 0) {
+    const dailyData = _buildDailyAvg(allScores, 30);
+    html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📈 過去 30 日全班平均分</p>
+      ${_renderLineChart(dailyData)}
+    </div>`;
+  }
+
+  // ===== 4-week activity heatmap =====
+  if (totalAttempts > 0) {
+    const weeklyData = _buildWeeklyHeatmap(allScores);
+    const totalActive = allScores.length;
+    html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🟩 過去 4 週活躍度（總 ${totalActive} 次）</p>
+      ${_renderWeekHeatmap(weeklyData)}
+    </div>`;
+  }
+
+  // ===== Class-wide weak spots Top 5 =====
   const wordDifficulty = _computeClassWeakSpots(filterScores);
   if (wordDifficulty.length > 0) {
-    html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px;">
-      <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;">🎯 全班詞彙難點熱點（依時段 ${_dashFilter === 'week' ? '本週' : _dashFilter === 'month' ? '本月' : '全部'}）</p>
-      <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-bottom:8px;">全班同學平均分最低嘅 5 個詞彙</div>`;
-    wordDifficulty.slice(0, 5).forEach(([word, info]) => {
-      const barColor = info.avg < 50 ? '#ef4444' : info.avg < 70 ? '#f59e0b' : '#22c55e';
-      html += `<div style="display:flex;align-items:center;gap:10px;margin:6px 0;">
-        <div style="min-width:90px;font-weight:bold;">${word}</div>
-        <div style="flex:1;background:rgba(0,0,0,0.3);border-radius:8px;height:18px;position:relative;overflow:hidden;">
-          <div style="position:absolute;left:0;top:0;height:100%;width:${info.avg}%;background:${barColor};"></div>
-          <div style="position:relative;text-align:center;font-size:0.8em;line-height:18px;color:#fff;">${info.avg} 分</div>
-        </div>
-        <div style="min-width:80px;font-size:0.8em;color:rgba(255,255,255,0.6);text-align:right;">${info.count} 次</div>
+    const barItems = wordDifficulty.slice(0, 5).map(([word, info]) => ({
+      label: word, value: info.avg, count: info.count
+    }));
+    html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🎯 全班難點 Top 5</p>
+      ${_renderBarChart(barItems, 100)}
+    </div>`;
+  }
+
+  // ===== Actionable alerts =====
+  if (totalAttempts > 0) {
+    const alerts = _buildAlerts(allScores);
+    if (alerts.length > 0) {
+      html += `<div style="background:rgba(239,68,68,0.1);border:2px solid rgba(239,68,68,0.3);border-radius:12px;padding:14px;margin-bottom:14px;">
+        <p style="font-weight:bold;color:#ef4444;margin-bottom:8px;">⚠️ 需要跟進（${alerts.length}）</p>
+        ${alerts.map(a => `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.95em;">${a}</div>`).join('')}
       </div>`;
+    }
+  }
+
+  // ===== ASR engine pie =====
+  const asrStats = _getAsrStats();
+  if (Object.keys(asrStats).length > 0) {
+    const slices = Object.entries(asrStats).map(([engine, count]) => {
+      const e = _ASR_ENGINES[engine] || { name: engine, costEmoji: '⚙️', privacyEmoji: '' };
+      const colorMap = { 'webspeech': '#3b82f6', 'whisper': '#22c55e', 'custom': '#f59e0b' };
+      return {
+        label: e.name,
+        value: count,
+        color: colorMap[engine] || '#666',
+        emoji: e.costEmoji
+      };
     });
-    html += `</div>`;
+    html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🎙 評估引擎使用分佈</p>
+      ${_renderPieChart(slices)}
+    </div>`;
   }
 
   // ===== Per-student cards =====
+  html += `<p style="font-weight:bold;color:#f59e0b;margin:18px 0 8px;font-size:1.1em;">👨‍🎓 學生進度</p>`;
   html += state.students.map(s => {
     const p = state.progress[s.id] || {};
     const filteredScores = filterScores(p.scores);
     const attempts = filteredScores.length;
     const lastSession = p.lastSession ? new Date(p.lastSession).toLocaleString('zh-HK', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' }) : '—';
-    // Mastery/struggling: use ALL data (not filtered by period) so mastery reflects long-term
     const allByWord = p.byWord || {};
     const mastered = Object.values(allByWord).filter(w => w.bestScore >= 80).length;
     const struggling = Object.values(allByWord).filter(w => w.attempts >= 2 && w.bestScore < 60).length;
     const avg = attempts > 0 ? Math.round(filteredScores.reduce((sum, x) => sum + x.score, 0) / attempts) : 0;
-    // Mini sparkline of last 10 attempts
-    const sparkData = (p.scores || []).slice(-10).map(s => s.score);
+    // Improvement: last 5 vs prior 5
+    const allScoresList = p.scores || [];
+    let trendLabel = '—';
+    if (allScoresList.length >= 6) {
+      const recent = allScoresList.slice(-5).map(x => x.score);
+      const prior = allScoresList.slice(-10, -5).map(x => x.score);
+      if (prior.length > 0) {
+        const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+        const priorAvg = prior.reduce((a, b) => a + b, 0) / prior.length;
+        const diff = Math.round(recentAvg - priorAvg);
+        if (diff > 0) trendLabel = `↗ +${diff}`;
+        else if (diff < 0) trendLabel = `↘ ${diff}`;
+        else trendLabel = '→ ±0';
+      }
+    }
+    const trendColor = trendLabel.startsWith('↗') ? '#22c55e' : trendLabel.startsWith('↘') ? '#ef4444' : 'rgba(255,255,255,0.6)';
+    const sparkData = allScoresList.slice(-10).map(x => x.score);
     const sparkSvg = sparkData.length > 1
       ? _renderSparkline(sparkData, 100, 30)
       : '<div style="color:rgba(255,255,255,0.4);font-size:0.8em;text-align:center;padding:8px 0;">— 無數據 —</div>';
@@ -1876,17 +1998,17 @@ function renderDashboard() {
         <span style="font-size:1.8em;">${s.avatar || '🌟'}</span>
         <span style="font-weight:bold;font-size:1.2em;flex:1;">${s.name}</span>
         <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${attempts} 次</span>
+        <span style="color:${trendColor};font-size:1em;font-weight:bold;">${trendLabel}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:0.9em;text-align:center;margin-bottom:8px;">
-        <div style="background:rgba(34,197,94,0.2);padding:6px;border-radius:8px;">✅ ${mastered} 已掌握</div>
-        <div style="background:rgba(239,68,68,0.2);padding:6px;border-radius:8px;">⚠️ ${struggling} 待加強</div>
-        <div style="background:rgba(245,158,11,0.2);padding:6px;border-radius:8px;">📊 平均 ${avg} 分</div>
+        <div style="background:rgba(34,197,94,0.2);padding:6px;border-radius:8px;">✅ ${mastered}</div>
+        <div style="background:rgba(239,68,68,0.2);padding:6px;border-radius:8px;">⚠️ ${struggling}</div>
+        <div style="background:rgba(245,158,11,0.2);padding:6px;border-radius:8px;">📊 ${avg}</div>
       </div>
       <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:4px;margin:6px 0;">
-        <div style="font-size:0.75em;color:rgba(255,255,255,0.5);margin-bottom:2px;">最近 10 次分數趨勢</div>
         ${sparkSvg}
       </div>
-      <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-top:8px;">最後練習：${lastSession}</div>
+      <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-top:6px;">最後練習：${lastSession}</div>
       <div style="display:flex;gap:6px;margin-top:8px;">
         <button onclick="showStudentDetail('${s.id}')" style="flex:1;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:42px;">📋 詳細</button>
         <button onclick="exportStudentReport('${s.id}')" style="flex:1;background:#f59e0b;font-size:0.95em;padding:10px;min-height:42px;">📄 報告</button>
@@ -1900,6 +2022,46 @@ function renderDashboard() {
   }
 
   container.innerHTML = html;
+}
+
+// Build actionable alerts (3-day no practice, struggling streak, etc.)
+function _buildAlerts(allScores) {
+  const alerts = [];
+  const now = new Date();
+  state.students.forEach(s => {
+    const p = state.progress[s.id] || {};
+    const scores = p.scores || [];
+    if (scores.length === 0) return;
+    // Alert 1: 3+ days no practice
+    const lastDate = p.lastSession ? new Date(p.lastSession) : null;
+    if (lastDate) {
+      const daysSince = Math.floor((now - lastDate) / (24 * 60 * 60 * 1000));
+      if (daysSince >= 3) {
+        alerts.push(`${s.avatar} <b>${s.name}</b>：${daysSince} 日冇練習`);
+      }
+    }
+    // Alert 2: last 3 attempts all < 60
+    const last3 = scores.slice(-3).map(x => x.score);
+    if (last3.length >= 3 && last3.every(s => s < 60)) {
+      alerts.push(`${s.avatar} <b>${s.name}</b>：最近 3 次都 &lt; 60 分`);
+    }
+  });
+  // Alert 3: words that 50%+ students score < 50
+  const wordFail = {};
+  state.students.forEach(s => {
+    const p = state.progress[s.id] || {};
+    Object.entries(p.byWord || {}).forEach(([w, info]) => {
+      if (!wordFail[w]) wordFail[w] = { fail: 0, total: 0 };
+      wordFail[w].total += 1;
+      if (info.bestScore < 50) wordFail[w].fail += 1;
+    });
+  });
+  Object.entries(wordFail).forEach(([w, info]) => {
+    if (info.total >= 2 && info.fail / info.total >= 0.5) {
+      alerts.push(`📌 <b>${w}</b>：${info.fail}/${info.total} 學生 &lt; 50 分（建議全班重溫）`);
+    }
+  });
+  return alerts.slice(0, 8);
 }
 
 // Render a tiny SVG sparkline of scores over time
@@ -1918,6 +2080,273 @@ function _renderSparkline(data, width, height) {
     <polyline points="${points}" fill="none" stroke="${lastColor}" stroke-width="2"/>
     <circle cx="${((data.length-1)*stepX).toFixed(1)}" cy="${(height - ((last-min)/(max-min))*height).toFixed(1)}" r="3" fill="${lastColor}"/>
   </svg>`;
+}
+
+// ================== SVG VISUALIZATION UTILITIES ==================
+
+// Strip heatmap: N days as colored cells. data = array of {date, count}
+function _renderStripHeatmap(data, days) {
+  days = days || 7;
+  data = data || [];
+  const cellSize = 28, gap = 4;
+  const totalW = days * (cellSize + gap);
+  let html = `<svg viewBox="0 0 ${totalW} ${cellSize}" style="width:100%;max-width:320px;height:${cellSize}px;">`;
+  for (let i = 0; i < days; i++) {
+    const cell = data[i] || { count: 0 };
+    const intensity = Math.min(1, cell.count / 5);
+    const color = cell.count === 0 ? 'rgba(255,255,255,0.1)'
+      : intensity < 0.4 ? 'rgba(34,197,94,0.4)'
+      : intensity < 0.8 ? 'rgba(34,197,94,0.7)'
+      : '#22c55e';
+    const x = i * (cellSize + gap);
+    const label = cell.date ? new Date(cell.date).getDate() : '';
+    html += `<rect x="${x}" y="0" width="${cellSize}" height="${cellSize}" rx="6" fill="${color}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    if (label) {
+      html += `<text x="${x + cellSize/2}" y="${cellSize - 6}" text-anchor="middle" font-size="10" fill="rgba(255,255,255,0.6)">${label}</text>`;
+    }
+  }
+  html += '</svg>';
+  return html;
+}
+
+// 4-week × 7-day heatmap (like GitHub contributions)
+function _renderWeekHeatmap(weeklyData) {
+  // weeklyData = [{day0..day6: count}, ...] up to 4 weeks
+  const cellSize = 22, gap = 3;
+  const labelW = 28, headerH = 18;
+  const w = labelW + 7 * (cellSize + gap);
+  const h = headerH + 4 * (cellSize + gap);
+  const dayLabels = ['一', '二', '三', '四', '五', '六', '日'];
+  let html = `<svg viewBox="0 0 ${w} ${h}" style="width:100%;max-width:280px;height:${h}px;">`;
+  // Day labels
+  dayLabels.forEach((lbl, i) => {
+    html += `<text x="0" y="${headerH + i * (cellSize + gap) + cellSize * 0.7}" font-size="10" fill="rgba(255,255,255,0.5)">${lbl}</text>`;
+  });
+  // Cells
+  for (let w = 0; w < 4; w++) {
+    for (let d = 0; d < 7; d++) {
+      const count = (weeklyData[w] && weeklyData[w][d]) || 0;
+      const intensity = Math.min(1, count / 5);
+      const color = count === 0 ? 'rgba(255,255,255,0.08)'
+        : intensity < 0.4 ? 'rgba(34,197,94,0.35)'
+        : intensity < 0.8 ? 'rgba(34,197,94,0.6)'
+        : '#22c55e';
+      const x = labelW + d * (cellSize + gap);
+      const y = headerH + w * (cellSize + gap);
+      html += `<rect x="${x}" y="${y}" width="${cellSize}" height="${cellSize}" rx="4" fill="${color}"/>`;
+    }
+  }
+  html += '</svg>';
+  return html;
+}
+
+// Horizontal bar chart for weak spots
+function _renderBarChart(items, maxValue) {
+  // items = [{label, value, count}]
+  maxValue = maxValue || 100;
+  const rowH = 26, gap = 8, labelW = 70, countW = 60, barAreaW = 160;
+  const totalH = items.length * (rowH + gap);
+  const totalW = labelW + barAreaW + countW;
+  let html = `<svg viewBox="0 0 ${totalW} ${totalH}" style="width:100%;height:${totalH}px;">`;
+  items.forEach((item, i) => {
+    const y = i * (rowH + gap);
+    const pct = (item.value / maxValue) * 100;
+    const barColor = item.value < 50 ? '#ef4444' : item.value < 70 ? '#f59e0b' : '#22c55e';
+    html += `<text x="0" y="${y + rowH/2 + 4}" font-size="12" fill="rgba(255,255,255,0.9)" font-weight="bold">${item.label}</text>`;
+    html += `<rect x="${labelW}" y="${y + 4}" width="${barAreaW}" height="${rowH - 8}" rx="4" fill="rgba(0,0,0,0.3)"/>`;
+    html += `<rect x="${labelW}" y="${y + 4}" width="${barAreaW * pct / 100}" height="${rowH - 8}" rx="4" fill="${barColor}"/>`;
+    html += `<text x="${labelW + barAreaW * pct / 100 + 4}" y="${y + rowH/2 + 4}" font-size="11" fill="#fff" font-weight="bold">${item.value}${item.suffix || ''}</text>`;
+    if (item.count !== undefined) {
+      html += `<text x="${labelW + barAreaW + 8}" y="${y + rowH/2 + 4}" font-size="10" fill="rgba(255,255,255,0.5)">${item.count}次</text>`;
+    }
+  });
+  html += '</svg>';
+  return html;
+}
+
+// Mastery funnel
+function _renderFunnel(stages) {
+  // stages = [{label, count, color}]
+  const maxCount = Math.max(1, ...stages.map(s => s.count));
+  const rowH = 36, gap = 6, totalH = stages.length * (rowH + gap);
+  let html = `<svg viewBox="0 0 280 ${totalH}" style="width:100%;height:${totalH}px;">`;
+  stages.forEach((stage, i) => {
+    const y = i * (rowH + gap);
+    const pct = stage.count / maxCount;
+    const barW = 240 * pct;
+    const barX = (280 - barW) / 2;
+    html += `<text x="0" y="${y + rowH/2 + 4}" font-size="12" fill="rgba(255,255,255,0.85)" font-weight="bold">${stage.label}</text>`;
+    html += `<rect x="${barX}" y="${y + 4}" width="${barW}" height="${rowH - 8}" rx="6" fill="${stage.color}"/>`;
+    html += `<text x="140" y="${y + rowH/2 + 4}" text-anchor="middle" font-size="13" fill="#fff" font-weight="bold">${stage.count}</text>`;
+    if (i < stages.length - 1) {
+      html += `<text x="270" y="${y + rowH/2 + 4}" text-anchor="end" font-size="11" fill="rgba(255,255,255,0.5)">${Math.round(pct*100)}%</text>`;
+    }
+  });
+  html += '</svg>';
+  return html;
+}
+
+// 30-day line chart of class average
+function _renderLineChart(dailyData, options) {
+  // dailyData = [{date, avg, count}] length = 30
+  options = options || {};
+  const width = options.width || 320;
+  const height = options.height || 100;
+  const padTop = 8, padBot = 18, padLeft = 28, padRight = 8;
+  const chartW = width - padLeft - padRight;
+  const chartH = height - padTop - padBot;
+
+  if (!dailyData || dailyData.length === 0) {
+    return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;"><text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無數據</text></svg>`;
+  }
+
+  // Y-axis grid lines at 0, 50, 100
+  const gridLines = [0, 50, 100];
+  let html = `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;">`;
+  gridLines.forEach(v => {
+    const y = padTop + chartH - (v / 100) * chartH;
+    html += `<line x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    html += `<text x="${padLeft - 4}" y="${y + 3}" text-anchor="end" font-size="9" fill="rgba(255,255,255,0.4)">${v}</text>`;
+  });
+
+  const stepX = chartW / Math.max(1, dailyData.length - 1);
+  const points = dailyData.map((d, i) => {
+    const x = padLeft + i * stepX;
+    const y = padTop + chartH - (d.avg / 100) * chartH;
+    return { x, y, ...d };
+  });
+  const polyStr = points.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+
+  // Area fill
+  const areaPath = `M ${points[0].x},${padTop + chartH} L ${polyStr} L ${points[points.length-1].x},${padTop + chartH} Z`;
+  html += `<path d="${areaPath}" fill="rgba(124,58,237,0.3)"/>`;
+  html += `<polyline points="${polyStr}" fill="none" stroke="#7c3aed" stroke-width="2"/>`;
+  // Last point dot
+  const last = points[points.length - 1];
+  html += `<circle cx="${last.x.toFixed(1)}" cy="${last.y.toFixed(1)}" r="3" fill="#7c3aed"/>`;
+  // X labels (start, mid, end)
+  const labelIndices = [0, Math.floor(dailyData.length / 2), dailyData.length - 1];
+  labelIndices.forEach(i => {
+    const d = new Date(dailyData[i].date);
+    const label = `${d.getMonth() + 1}/${d.getDate()}`;
+    html += `<text x="${points[i].x.toFixed(1)}" y="${height - 4}" text-anchor="middle" font-size="9" fill="rgba(255,255,255,0.4)">${label}</text>`;
+  });
+  html += '</svg>';
+  return html;
+}
+
+// Pie chart for ASR engine distribution
+function _renderPieChart(slices) {
+  // slices = [{label, value, color, emoji}]
+  const total = slices.reduce((s, x) => s + x.value, 0);
+  const cx = 80, cy = 80, r = 70;
+  let html = `<svg viewBox="0 0 280 160" style="width:100%;height:160px;">`;
+  if (total === 0) {
+    html += `<text x="80" y="80" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無數據</text>`;
+  } else {
+    let angle = -Math.PI / 2;
+    slices.forEach(slice => {
+      if (slice.value === 0) return;
+      const sliceAngle = (slice.value / total) * Math.PI * 2;
+      const x1 = cx + r * Math.cos(angle);
+      const y1 = cy + r * Math.sin(angle);
+      const x2 = cx + r * Math.cos(angle + sliceAngle);
+      const y2 = cy + r * Math.sin(angle + sliceAngle);
+      const largeArc = sliceAngle > Math.PI ? 1 : 0;
+      const path = `M ${cx},${cy} L ${x1},${y1} A ${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z`;
+      html += `<path d="${path}" fill="${slice.color}" stroke="#1a1a2e" stroke-width="2"/>`;
+      angle += sliceAngle;
+    });
+  }
+  // Legend
+  let legendY = 16;
+  slices.forEach(slice => {
+    const pct = total > 0 ? Math.round(slice.value / total * 100) : 0;
+    html += `<rect x="170" y="${legendY - 8}" width="12" height="12" rx="2" fill="${slice.color}"/>`;
+    html += `<text x="186" y="${legendY + 2}" font-size="11" fill="rgba(255,255,255,0.9)">${slice.emoji} ${slice.label}</text>`;
+    html += `<text x="276" y="${legendY + 2}" text-anchor="end" font-size="11" fill="rgba(255,255,255,0.6)">${slice.value} (${pct}%)</text>`;
+    legendY += 20;
+  });
+  html += '</svg>';
+  return html;
+}
+
+// Build last N days of attempt counts (for strip heatmap)
+function _buildDailyCounts(scores, days) {
+  days = days || 7;
+  const result = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const count = scores.filter(s => {
+      const t = new Date(s.at);
+      return t >= dayStart && t < dayEnd;
+    }).length;
+    result.push({ date: dayStart.toISOString(), count });
+  }
+  return result;
+}
+
+// Build 4-week heatmap data: array of 4 weeks, each = [7 days count]
+function _buildWeeklyHeatmap(scores) {
+  const result = [[], [], [], []];
+  const now = new Date();
+  for (let w = 0; w < 4; w++) {
+    for (let d = 0; d < 7; d++) {
+      const daysAgo = (3 - w) * 7 + (6 - d);
+      const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysAgo);
+      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      const count = scores.filter(s => {
+        const t = new Date(s.at);
+        return t >= dayStart && t < dayEnd;
+      }).length;
+      result[w][d] = count;
+    }
+  }
+  return result;
+}
+
+// Build daily avg for N days (for line chart)
+function _buildDailyAvg(scores, days) {
+  days = days || 30;
+  const result = [];
+  const now = new Date();
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+    const dayScores = scores.filter(s => {
+      const t = new Date(s.at);
+      return t >= dayStart && t < dayEnd;
+    });
+    result.push({
+      date: dayStart.toISOString(),
+      avg: dayScores.length > 0 ? Math.round(dayScores.reduce((sum, x) => sum + x.score, 0) / dayScores.length) : 0,
+      count: dayScores.length
+    });
+  }
+  return result;
+}
+
+// Calculate consecutive-day streak from scores
+function _calcStreak(scores) {
+  if (!scores || scores.length === 0) return 0;
+  const dates = new Set(scores.map(s => new Date(s.at).toDateString()));
+  let streak = 0;
+  const today = new Date();
+  // Allow today OR yesterday to be the streak start (don't break streak if not practiced today)
+  let checkDate = new Date(today);
+  if (!dates.has(checkDate.toDateString())) {
+    checkDate = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+    if (!dates.has(checkDate.toDateString())) return 0;
+  }
+  while (dates.has(checkDate.toDateString())) {
+    streak++;
+    checkDate = new Date(checkDate.getTime() - 24 * 60 * 60 * 1000);
+  }
+  return streak;
 }
 
 // Compute class-wide weak spots (words with lowest avg score across all students)
