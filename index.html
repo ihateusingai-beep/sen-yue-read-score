@@ -118,6 +118,12 @@ button:active { transform:scale(0.95); }
         <div style="font-size:1.5em;font-weight:bold;">我的進度</div>
         <div style="opacity:0.8;">睇下我學過咩</div>
       </div>
+      <!-- 老師專用：Dashboard（學生 mode 隱藏） -->
+      <div class="hub-card" id="hubTeacherDashboard" style="display:none;" onclick="openTeacherDashboard();">
+        <div class="hub-icon">📊</div>
+        <div style="font-size:1.5em;font-weight:bold;">Dashboard</div>
+        <div style="opacity:0.8;">全班進度 + 報告</div>
+      </div>
     </div>
 
     <!-- 老師設定面板（預設折疊） -->
@@ -298,6 +304,11 @@ button:active { transform:scale(0.95); }
   <h2>🎤 即時評估</h2>
   <div id="assessmentContent" style="max-width:700px;margin:0 auto;"></div>
   <button onclick="updateHubStatus();goTo('hub')" style="margin:30px auto;display:block;background:#666;">🏠 返回中心</button>
+</div>
+
+<!-- MY PROGRESS (student-facing) -->
+<div id="myProgress" class="page">
+  <div id="myProgressContent" style="max-width:800px;margin:40px auto;padding:0 20px;"></div>
 </div>
 
 <!-- RESULT -->
@@ -580,6 +591,7 @@ function goTo(page) {
       }
       ind.textContent = `🎙 評估引擎：${e.name} ${e.privacyEmoji}${extra}`;
     }
+    _updateHubForMode();
   }
 }
 
@@ -1092,16 +1104,17 @@ function showTeacherRecords() {
 
 // ================== STUDENT "MY PROGRESS" PAGE ==================
 function showMyProgress() {
-  if (!state.currentStudentId) {
-    // Teacher viewing as themselves — show full class
-    if (state.mode === 'teacher') {
-      switchAdminTab('dashboard');
-      toggleAdminPanel();
-      return;
-    }
+  // Teacher viewing — open admin dashboard tab
+  if (state.mode === 'teacher' && !state.currentStudentId) {
+    switchAdminTab('dashboard');
+    toggleAdminPanel();
+    return;
   }
   const sid = state.currentStudentId || (state.students[0] ? state.students[0].id : null);
-  if (!sid) return;
+  if (!sid) {
+    showToast('⚠️ 尚未有學生資料');
+    return;
+  }
   const s = state.students.find(x => x.id === sid);
   if (!s) return;
   const p = state.progress[sid] || { byWord: {}, scores: [], totalAttempts: 0 };
@@ -1109,64 +1122,76 @@ function showMyProgress() {
   const practicing = Object.entries(p.byWord || {}).filter(([_, w]) => w.bestScore >= 60 && w.bestScore < 80);
   const struggling = Object.entries(p.byWord || {}).filter(([_, w]) => w.attempts >= 2 && w.bestScore < 60);
   const avg = p.scores && p.scores.length > 0 ? Math.round(p.scores.reduce((sum, x) => sum + x.score, 0) / p.scores.length) : 0;
-
-  // Compute stars: 1 ⭐ per 5 mastered words, capped at 5 stars
   const stars = Math.min(5, Math.floor(mastered.length / 5));
+  const totalLearned = mastered.length + practicing.length + struggling.length;
+  const totalAvailable = state.words.length;
 
-  const container = document.getElementById('assessmentContent');
+  const container = document.getElementById('myProgressContent');
   container.innerHTML = `
-    <div style="max-width:700px;margin:0 auto;text-align:center;">
-      <div style="font-size:4em;margin-top:20px;">${s.avatar || '🌟'}</div>
-      <h2 style="color:#f59e0b;margin:8px 0;">${s.name} 嘅進度</h2>
-      <div style="font-size:2.5em;margin:16px 0;color:#f59e0b;">${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
-      <div style="font-size:1.2em;margin-bottom:20px;">已掌握 ${mastered.length} 個詞彙</div>
-
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0;">
-        <div style="background:rgba(34,197,94,0.3);border-radius:12px;padding:14px;">
-          <div style="font-size:2.2em;font-weight:bold;">${p.totalAttempts || 0}</div>
-          <div style="font-size:0.9em;">練習次數</div>
-        </div>
-        <div style="background:rgba(245,158,11,0.3);border-radius:12px;padding:14px;">
-          <div style="font-size:2.2em;font-weight:bold;">${avg}</div>
-          <div style="font-size:0.9em;">平均分</div>
-        </div>
-        <div style="background:rgba(124,58,237,0.3);border-radius:12px;padding:14px;">
-          <div style="font-size:2.2em;font-weight:bold;">${mastered.length}</div>
-          <div style="font-size:0.9em;">已掌握</div>
-        </div>
+    <div style="text-align:center;padding:20px 0;">
+      <div style="font-size:5em;line-height:1;">${s.avatar || '🌟'}</div>
+      <h1 style="color:#f59e0b;font-size:2.2em;margin:8px 0;">${s.name}</h1>
+      <div style="font-size:2.5em;margin:12px 0;color:#f59e0b;letter-spacing:4px;">${'⭐'.repeat(stars)}${'☆'.repeat(5-stars)}</div>
+      <div style="font-size:1.1em;color:rgba(255,255,255,0.8);margin-bottom:20px;">
+        ${totalLearned === 0
+          ? '未開始練習，加油！'
+          : `已認識 ${totalLearned} / ${totalAvailable} 個詞彙`}
       </div>
+    </div>
 
-      ${mastered.length > 0 ? `
-        <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:16px 0;text-align:left;">
-          <h3 style="color:#22c55e;margin-bottom:10px;">✅ 我識讀嘅詞彙 (${mastered.length})</h3>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            ${mastered.map(([w, _]) => `<span style="background:rgba(34,197,94,0.3);padding:6px 14px;border-radius:16px;font-size:1.1em;">${w}</span>`).join('')}
-          </div>
-        </div>` : ''}
-
-      ${practicing.length > 0 ? `
-        <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:16px 0;text-align:left;">
-          <h3 style="color:#f59e0b;margin-bottom:10px;">👍 仲要加油 (${practicing.length})</h3>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            ${practicing.map(([w, _]) => `<span style="background:rgba(245,158,11,0.3);padding:6px 14px;border-radius:16px;font-size:1.1em;">${w}</span>`).join('')}
-          </div>
-        </div>` : ''}
-
-      ${struggling.length > 0 ? `
-        <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:16px 0;text-align:left;">
-          <h3 style="color:#ef4444;margin-bottom:10px;">💪 我會加油 (${struggling.length})</h3>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;">
-            ${struggling.map(([w, _]) => `<span style="background:rgba(239,68,68,0.3);padding:6px 14px;border-radius:16px;font-size:1.1em;">${w}</span>`).join('')}
-          </div>
-        </div>` : ''}
-
-      <div style="margin-top:24px;">
-        <button onclick="goTo('vocab');initVocab();" style="background:#22c55e;font-size:1.1em;padding:14px;width:80%;max-width:300px;">📚 繼續練習</button>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0;">
+      <div style="background:rgba(124,58,237,0.4);border-radius:16px;padding:18px;text-align:center;border:2px solid #7c3aed;">
+        <div style="font-size:2.5em;font-weight:bold;color:#fff;">${p.totalAttempts || 0}</div>
+        <div style="font-size:0.95em;color:rgba(255,255,255,0.85);margin-top:4px;">練習次數</div>
       </div>
-      <button onclick="goTo('hub')" style="margin-top:12px;background:#666;font-size:1em;padding:12px;width:80%;max-width:300px;">🏠 返回中心</button>
+      <div style="background:rgba(245,158,11,0.4);border-radius:16px;padding:18px;text-align:center;border:2px solid #f59e0b;">
+        <div style="font-size:2.5em;font-weight:bold;color:#fff;">${avg}</div>
+        <div style="font-size:0.95em;color:rgba(255,255,255,0.85);margin-top:4px;">平均分</div>
+      </div>
+      <div style="background:rgba(34,197,94,0.4);border-radius:16px;padding:18px;text-align:center;border:2px solid #22c55e;">
+        <div style="font-size:2.5em;font-weight:bold;color:#fff;">${mastered.length}</div>
+        <div style="font-size:0.95em;color:rgba(255,255,255,0.85);margin-top:4px;">已掌握</div>
+      </div>
+    </div>
+
+    ${mastered.length > 0 ? `
+      <div style="background:rgba(34,197,94,0.15);border:2px solid rgba(34,197,94,0.4);border-radius:16px;padding:18px;margin:16px 0;">
+        <h2 style="color:#22c55e;font-size:1.3em;margin-bottom:12px;">✅ 我識讀嘅詞彙（${mastered.length}）</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${mastered.map(([w, _]) => `<span style="background:rgba(34,197,94,0.4);padding:8px 16px;border-radius:20px;font-size:1.15em;font-weight:bold;">${w}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+    ${practicing.length > 0 ? `
+      <div style="background:rgba(245,158,11,0.15);border:2px solid rgba(245,158,11,0.4);border-radius:16px;padding:18px;margin:16px 0;">
+        <h2 style="color:#f59e0b;font-size:1.3em;margin-bottom:12px;">👍 仲要加油（${practicing.length}）</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${practicing.map(([w, _]) => `<span style="background:rgba(245,158,11,0.4);padding:8px 16px;border-radius:20px;font-size:1.15em;font-weight:bold;">${w}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+    ${struggling.length > 0 ? `
+      <div style="background:rgba(239,68,68,0.15);border:2px solid rgba(239,68,68,0.4);border-radius:16px;padding:18px;margin:16px 0;">
+        <h2 style="color:#ef4444;font-size:1.3em;margin-bottom:12px;">💪 我會加油（${struggling.length}）</h2>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">
+          ${struggling.map(([w, _]) => `<span style="background:rgba(239,68,68,0.4);padding:8px 16px;border-radius:20px;font-size:1.15em;font-weight:bold;">${w}</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+    ${totalLearned === 0 ? `
+      <div style="background:rgba(255,255,255,0.05);border-radius:16px;padding:30px 20px;margin:20px 0;text-align:center;color:rgba(255,255,255,0.7);">
+        <div style="font-size:3em;margin-bottom:12px;">🎤</div>
+        <p style="font-size:1.2em;margin-bottom:8px;">撳下面掣開始練習！</p>
+        <p>讀出詞彙就會記低喺度</p>
+      </div>
+    ` : ''}
+
+    <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px;align-items:center;">
+      <button onclick="goTo('vocab');initVocab();" style="background:#22c55e;font-size:1.15em;padding:16px 32px;width:100%;max-width:340px;border-radius:16px;">📚 繼續練習</button>
+      <button onclick="goTo('hub');" style="background:#666;font-size:1.05em;padding:14px 28px;width:100%;max-width:340px;border-radius:16px;">🏠 返回中心</button>
     </div>
   `;
-  goTo('assessment');
+  goTo('myProgress');
 }
 
 // INIT — fetch JSON data then restore session state
@@ -1215,6 +1240,18 @@ async function init() {
     state.students = Array.isArray(sData.students) ? sData.students : [];
     if (sData.loginMode) state.loginMode = sData.loginMode;
   } catch(e) { state.students = []; }
+  // Seed default student on very first run (no localStorage yueStudents at all)
+  if (state.students.length === 0 && !localStorage.getItem('yueStudents')) {
+    state.students = [{
+      id: 's_demo',
+      name: '示範同學',
+      pin: '00000',
+      avatar: '🌟',
+      color: '#f59e0b',
+      createdAt: new Date().toISOString()
+    }];
+    _persistStudents();
+  }
   try {
     state.progress = JSON.parse(localStorage.getItem('yueProgress') || '{}');
   } catch(e) { state.progress = {}; }
@@ -1368,19 +1405,39 @@ function _loginStudent(student) {
   localStorage.setItem('yueLastStudentId', student.id);
   document.getElementById('hubGreeting').textContent = `👋 ${student.avatar || '🌟'} ${student.name}，準備好未？`;
   _rebuildWords();
+  _updateHubForMode();
   goTo('hub');
   showToast(`歡迎返嚟，${student.name}！`);
 }
 
 function enterTeacherMode() {
-  if (state.students.length === 0 && state.categories.length > 0) {
-    // first time, seed one demo student
-    addNewStudent({ silent: true, seed: { name: '示範學生', pin: '11111', avatar: '🌟', color: '#f59e0b' } });
-  }
   state.mode = 'teacher';
   // teacher skips student login
+  _updateHubForMode();
   goTo('hub');
   document.getElementById('hubGreeting').textContent = '🔧 老師模式';
+  showToast('🔧 老師模式');
+}
+
+function _updateHubForMode() {
+  const dashCard = document.getElementById('hubTeacherDashboard');
+  if (dashCard) dashCard.style.display = (state.mode === 'teacher') ? 'block' : 'none';
+}
+
+function openTeacherDashboard() {
+  // Switch to teacher panel, then jump to dashboard tab
+  if (state.mode !== 'teacher') {
+    state.mode = 'teacher';
+    _updateHubForMode();
+  }
+  // Open admin panel
+  const panel = document.getElementById('adminPanel');
+  const arrow = document.getElementById('adminArrow');
+  if (panel && panel.style.display === 'none') {
+    panel.style.display = 'block';
+    if (arrow) arrow.textContent = '▲';
+  }
+  switchAdminTab('dashboard');
 }
 
 // ================== STUDENT CRUD ==================
