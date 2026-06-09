@@ -235,6 +235,9 @@ function startAssessment() {
 function showCategorySelector() {
   const container = document.getElementById('assessmentContent');
   const cats = ['季節','活動','聲音'];
+  if (!state.selectedCategories || !Array.isArray(state.selectedCategories) || state.selectedCategories.length === 0) {
+    state.selectedCategories = ['季節','活動','聲音'];
+  }
   let html = `<div style="max-width:600px;margin:0 auto;text-align:center;">
     <h3 style="color:#f59e0b;margin-bottom:20px;">選擇評估範疇（可多選）</h3>`;
   cats.forEach(cat => {
