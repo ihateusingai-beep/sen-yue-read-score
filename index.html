@@ -32,18 +32,59 @@ button:active { transform:scale(0.95); }
 .progress-dot.current { background:#f59e0b; animation:pulse 1.5s infinite; }
 @keyframes pulse { 50%{transform:scale(1.2);} }
 #toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:14px 28px; border-radius:12px; z-index:9999; display:none; }
+.pin-slot { display:inline-flex;align-items:center;justify-content:center;width:48px;height:60px;background:#fff;color:#1a1a2e;font-size:2.2em;font-weight:bold;border-radius:12px;border:3px solid #f59e0b; }
+.pin-slot.filled { background:#f59e0b;color:#fff; }
+.pin-btn { background:#7c3aed;color:#fff;font-size:2em;padding:0;min-height:80px;border-radius:16px;cursor:pointer;touch-action:manipulation; }
+.pin-btn:active { transform:scale(0.95); }
+.student-avatar-card { background:#fff;color:#1a1a2e;border:4px solid #f59e0b;border-radius:20px;padding:16px;cursor:pointer;text-align:center;transition:transform .2s;touch-action:manipulation; }
+.student-avatar-card:hover { transform:scale(1.05); }
+.student-avatar-card:active { transform:scale(0.95); }
+.student-emoji { font-size:3em;display:block;margin-bottom:6px; }
 </style>
 </head>
 <body>
 <div class="progress"><div class="progress-dots" id="progressDots"></div></div>
 
-<!-- HOME -->
+<!-- HOME / LOGIN -->
 <div id="home" class="page active">
-  <div class="home-card" style="text-align:center;margin-top:80px;">
+  <div class="home-card" style="text-align:center;margin-top:60px;">
     <h1>粵語朗讀評分</h1>
-    <p style="font-size:1.3em;margin:20px 0;">SEN 學生專用 • 即時 AI 評分</p>
-    <input id="studentName" placeholder="輸入你嘅名" style="width:80%;max-width:400px;margin:20px auto;display:block;text-align:center;">
-    <button onclick="startLearning()" style="width:80%;max-width:400px;">開始學習 →</button>
+    <p style="font-size:1.2em;margin:10px 0 20px;">SEN 學生專用</p>
+
+    <!-- 登入模式：PIN -->
+    <div id="loginPinMode">
+      <p style="font-size:1.1em;margin:20px 0 10px;">輸入你嘅 5 位數字密碼</p>
+      <div id="pinDisplay" style="display:flex;justify-content:center;gap:10px;margin:20px 0;">
+        <span class="pin-slot">·</span><span class="pin-slot">·</span><span class="pin-slot">·</span><span class="pin-slot">·</span><span class="pin-slot">·</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:300px;margin:20px auto;">
+        <button class="pin-btn" onclick="pinPress('1')">1</button>
+        <button class="pin-btn" onclick="pinPress('2')">2</button>
+        <button class="pin-btn" onclick="pinPress('3')">3</button>
+        <button class="pin-btn" onclick="pinPress('4')">4</button>
+        <button class="pin-btn" onclick="pinPress('5')">5</button>
+        <button class="pin-btn" onclick="pinPress('6')">6</button>
+        <button class="pin-btn" onclick="pinPress('7')">7</button>
+        <button class="pin-btn" onclick="pinPress('8')">8</button>
+        <button class="pin-btn" onclick="pinPress('9')">9</button>
+        <button onclick="pinClear()" style="background:#666;min-height:80px;font-size:1.3em;border-radius:16px;">清除</button>
+        <button class="pin-btn" onclick="pinPress('0')">0</button>
+        <button onclick="pinBackspace()" style="background:#666;min-height:80px;font-size:1.3em;border-radius:16px;">⌫</button>
+      </div>
+      <div id="loginError" style="color:#ef4444;font-size:1.1em;min-height:24px;margin-top:10px;"></div>
+    </div>
+
+    <!-- 登入模式：Grid (名+emoji) -->
+    <div id="loginGridMode" style="display:none;">
+      <p style="font-size:1.2em;margin:20px 0;">揀你個名</p>
+      <div id="studentGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:500px;margin:20px auto;"></div>
+      <div id="loginError2" style="color:#ef4444;font-size:1.1em;min-height:24px;margin-top:10px;"></div>
+    </div>
+
+    <!-- 老師入口 -->
+    <div style="border-top:2px solid rgba(0,0,0,0.1);margin-top:30px;padding-top:20px;">
+      <button onclick="enterTeacherMode()" style="background:#555;font-size:1.05em;padding:12px 28px;min-height:50px;">🔧 老師模式</button>
+    </div>
   </div>
 </div>
 
@@ -80,14 +121,22 @@ button:active { transform:scale(0.95); }
       <div id="adminPanel" style="display:none;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);border-radius:16px;margin-top:16px;padding:20px;text-align:left;max-width:700px;margin-left:auto;margin-right:auto;">
 
         <!-- Tab buttons -->
-        <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid rgba(255,255,255,0.2);padding-bottom:0;">
+        <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid rgba(255,255,255,0.2);padding-bottom:0;flex-wrap:wrap;">
           <button id="tabSettingsBtn" onclick="switchAdminTab('settings')"
-            style="flex:1;background:#7c3aed;font-size:1.05em;padding:10px 16px;border-radius:8px 8px 0 0;min-height:48px;">
+            style="flex:1;min-width:90px;background:#7c3aed;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
             📋 設定
           </button>
           <button id="tabEditBtn" onclick="switchAdminTab('edit')"
-            style="flex:1;background:#444;font-size:1.05em;padding:10px 16px;border-radius:8px 8px 0 0;min-height:48px;">
-            ✏️ 編輯詞彙
+            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
+            ✏️ 詞彙
+          </button>
+          <button id="tabStudentsBtn" onclick="switchAdminTab('students')"
+            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
+            👨‍🎓 學生
+          </button>
+          <button id="tabDashboardBtn" onclick="switchAdminTab('dashboard')"
+            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
+            📊 Dashboard
           </button>
         </div>
 
@@ -129,6 +178,54 @@ button:active { transform:scale(0.95); }
               ⚠️ 重設為 data/words.json 預設值
             </button>
           </div>
+        </div>
+
+        <!-- Tab: Students (管理 + 登入模式 + 進度匯出) -->
+        <div id="tabStudentsContent" style="display:none;">
+          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
+            管理學生帳號、設定 PIN / 頭像、揀登入模式。
+          </p>
+
+          <!-- 登入模式選擇 -->
+          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px;">
+            <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;font-size:1.05em;">🔑 登入模式</p>
+            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
+              <input type="radio" name="loginMode" value="pin" onchange="setLoginMode('pin')" style="width:24px;height:24px;accent-color:#f59e0b;">
+              <span>🔢 5 位數字 PIN</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
+              <input type="radio" name="loginMode" value="grid" onchange="setLoginMode('grid')" style="width:24px;height:24px;accent-color:#f59e0b;">
+              <span>🖼 名 + 頭像拼畫</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
+              <input type="radio" name="loginMode" value="both" onchange="setLoginMode('both')" style="width:24px;height:24px;accent-color:#f59e0b;">
+              <span>🔀 兩者皆可（顯示切換）</span>
+            </label>
+          </div>
+
+          <div id="studentList"></div>
+          <button onclick="addNewStudent()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">
+            ＋ 新增學生
+          </button>
+
+          <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
+            <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">
+              📦 學生資料同進度可匯出 / 匯入，方便跨 iPad 同步。
+            </p>
+            <div style="display:flex;gap:8px;">
+              <button onclick="exportStudentsJson()" style="flex:1;background:#0ea5e9;font-size:1em;padding:12px;min-height:50px;">⬇️ 匯出</button>
+              <button onclick="document.getElementById('importStudentsFile').click()" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;min-height:50px;">⬆️ 匯入</button>
+              <input type="file" id="importStudentsFile" accept=".json,application/json" style="display:none;" onchange="importStudentsJson(event)">
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Dashboard (學生進度總覽) -->
+        <div id="tabDashboardContent" style="display:none;">
+          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
+            所有學生嘅練習進度摘要。
+          </p>
+          <div id="dashboardContent"></div>
         </div>
 
       </div>
@@ -200,6 +297,37 @@ button:active { transform:scale(0.95); }
   </div>
 </div>
 
+<!-- Student Edit Modal -->
+<div id="studentModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:10000;overflow:auto;">
+  <div style="background:#1a1a2e;border:3px solid #f59e0b;border-radius:20px;max-width:480px;margin:40px auto;padding:24px;color:#fff;">
+    <h3 id="studentModalTitle" style="color:#f59e0b;text-align:center;margin-bottom:20px;">👨‍🎓 新增學生</h3>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <label style="font-size:1.1em;">
+        姓名 <span style="color:#ef4444;">*</span>
+        <input id="sm_name" type="text" maxlength="20" style="width:100%;font-size:1.2em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
+      </label>
+      <label style="font-size:1.1em;">
+        5 位 PIN（留空則無需密碼）
+        <input id="sm_pin" type="text" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" style="width:100%;font-size:1.4em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;font-family:monospace;letter-spacing:4px;text-align:center;">
+      </label>
+      <label style="font-size:1.1em;">
+        頭像（揀一個 emoji）
+        <div id="sm_emoji_picker" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
+          <!-- populated by JS -->
+        </div>
+      </label>
+      <label style="font-size:1.1em;">
+        顏色
+        <input id="sm_color" type="color" value="#f59e0b" style="width:100%;height:50px;padding:4px;border-radius:10px;border:2px solid #555;background:#222;cursor:pointer;">
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:20px;">
+      <button onclick="saveStudentFromModal()" style="flex:1;background:#22c55e;font-size:1.1em;padding:14px;">💾 儲存</button>
+      <button onclick="closeStudentModal()" style="flex:1;background:#666;font-size:1.1em;padding:14px;">取消</button>
+    </div>
+  </div>
+</div>
+
 <!-- Confirm modal -->
 <div id="confirmModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:10001;">
   <div style="background:#1a1a2e;border:3px solid #f59e0b;border-radius:20px;max-width:480px;margin:120px auto;padding:24px;color:#fff;text-align:center;">
@@ -214,18 +342,24 @@ button:active { transform:scale(0.95); }
 <script>
 // STATE
 let state = {
-  name: '',
+  mode: 'student',  // 'student' | 'teacher'
+  currentStudentId: null,
   currentWord: null,
   score: 0,
   completed: { vocab: false, assessment: false },
   autoTTS: true,
-  // Loaded from data/words.json at runtime
   categories: [],
-  words: [],           // flattened from enabled categories
+  words: [],
   assessmentIndex: 0,
   assessmentScores: [],
-  selectedCategoryIds: []  // ids of enabled categories (from localStorage overrides)
+  selectedCategoryIds: [],
+  // Students + progress (loaded from localStorage at init)
+  students: [],
+  progress: {},       // { [studentId]: progressObj }
+  loginMode: 'pin'    // 'pin' | 'grid' | 'both'
 };
+
+const _AVATAR_EMOJIS = ['🌟','🐯','🐻','🦁','🐼','🐨','🐸','🐵','🦊','🐰','🐱','🐶','🦄','🐙','🐢','🦋','🌸','🌈','🍎','🍇','⚽','🎨','🎵','🚀'];
 
 function speak(text) {
   if ('speechSynthesis' in window) {
@@ -263,10 +397,8 @@ function updateProgress() {
 }
 
 function startLearning() {
-  state.name = document.getElementById('studentName').value.trim() || '同學';
-  document.getElementById('hubGreeting').textContent = `👋 ${state.name}，準備好未？`;
-  updateHubStatus();
-  goTo('hub');
+  // legacy: just go to login page (no-op after Phase 2)
+  goTo('home');
 }
 
 function updateHubStatus() {
@@ -275,7 +407,6 @@ function updateHubStatus() {
   document.getElementById('hubVocab').innerHTML = state.completed.vocab ? done : locked;
   document.getElementById('hubAssessment').innerHTML = state.completed.assessment ? done : locked;
   updateProgress();
-  localStorage.setItem('yueState', JSON.stringify(state));
 }
 
 function initVocab() {
@@ -486,7 +617,7 @@ function scorePronunciation(transcript) {
   const uClean = clean(transcript);
   const similarity = calculateSimilarity(uClean, tClean);
   const bonus = (uClean.includes(tClean) || tClean.includes(uClean)) ? 20 : 0;
-  
+
   // 新：字元重疊 + 首字接近發音 bonus（減輕荷刻度）
   const targetChars = [...tClean];
   const userChars = [...uClean];
@@ -494,10 +625,11 @@ function scorePronunciation(transcript) {
   const overlapBonus = overlap * 18;
   const firstMatch = (targetChars[0] && userChars[0] && targetChars[0] === userChars[0]) ? 15 : 0;
   const aiScore = Math.min(100, Math.floor(similarity * 50 + overlapBonus + firstMatch + bonus));
-  
+
   const feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 55 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
 
   state.assessmentScores.push({ word: w.char, score: aiScore, transcript });
+  _recordAttempt(w.char, aiScore, transcript);
   state.score += aiScore;
 
   // show result
@@ -569,12 +701,14 @@ function finishAll() {
 
 function printCert() {
   const avg = Math.round(state.assessmentScores.reduce((s, x) => s + x.score, 0) / state.assessmentScores.length);
+  const cur = state.students.find(s => s.id === state.currentStudentId);
+  const studentName = cur ? cur.name : (state.name || '同學');
   const win = window.open('', '_blank');
   win.document.write(`
     <html><head><title>證書</title><style>body{font-family:Microsoft JhengHei;text-align:center;padding:60px;background:#fffef0;color:#1a1a2e;}h1{color:#c5a26f;font-size:3em;border-bottom:6px solid #c5a26f;padding-bottom:20px;} .score{font-size:4em;color:#22c55e;margin:40px 0;}</style></head>
     <body>
       <h1>粵語朗讀評分證書</h1>
-      <p style="font-size:2em;">${state.name}</p>
+      <p style="font-size:2em;">${studentName}</p>
       <p style="font-size:1.8em;">已成功完成 SEN 粵語詞彙朗讀評估</p>
       <div class="score">${avg} / 100</div>
       <p style="font-size:1.6em;">日期：${new Date().toLocaleDateString('zh-HK')}</p>
@@ -602,44 +736,20 @@ function resetAll() {
 }
 
 function showTeacherRecords() {
-  const container = document.getElementById('assessmentContent');
-  const saved = localStorage.getItem('yueState');
-  let html = `<div style="max-width:700px;margin:0 auto;"><h2 style="color:#f59e0b;">📋 老師記錄</h2>`;
-  if (!saved) {
-    html += `<p style="font-size:1.3em;">暫無記錄</p>`;
-  } else {
-    const data = JSON.parse(saved);
-    const scores = data.assessmentScores || [];
-    if (scores.length === 0) {
-      html += `<p style="font-size:1.3em;">暫無評估記錄</p>`;
-    } else {
-      const avg = Math.round(scores.reduce((s,x)=>s+x.score,0)/scores.length);
-      html += `<div style="font-size:2em;margin:20px 0;">平均 ${avg} 分（共 ${scores.length} 次）</div>`;
-      html += `<div style="text-align:left;max-height:400px;overflow:auto;">`;
-      scores.forEach((s,i) => {
-        const low = s.score < 60 ? 'background:#fee2e2;' : '';
-        html += `<div style="padding:12px;border-radius:12px;margin:8px 0;${low}border:1px solid #ddd;">
-          <b>${i+1}. ${s.word}</b> — ${s.score}分<br>
-          <span style="color:#666;">你講：${s.transcript}</span>
-        </div>`;
-      });
-      html += `</div>`;
-    }
-  }
-  html += `<button onclick="goTo('hub')" style="margin-top:20px;background:#666;width:80%;">返回</button></div>`;
-  container.innerHTML = html;
-  goTo('assessment');
+  // legacy: redirect to dashboard
+  switchAdminTab('dashboard');
+  toggleAdminPanel();
 }
 
 // INIT — fetch JSON data then restore session state
 async function init() {
+  // Load categories
   try {
     const resp = await fetch('data/words.json');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     state.categories = data.categories || [];
 
-    // Teacher's local edits take precedence over default JSON
     const savedCats = localStorage.getItem('yueCategories');
     if (savedCats) {
       try {
@@ -650,7 +760,6 @@ async function init() {
       } catch(e) {}
     }
 
-    // Restore enabled states (may be from old or new localStorage)
     const savedSettings = localStorage.getItem('yueAdminSettings');
     if (savedSettings) {
       try {
@@ -660,10 +769,9 @@ async function init() {
         });
       } catch(e) {}
     }
-
     _rebuildWords();
   } catch(e) {
-    console.warn('無法載入 data/words.json，使用 localStorage 或空白狀態', e);
+    console.warn('無法載入 data/words.json', e);
     const savedCats = localStorage.getItem('yueCategories');
     if (savedCats) {
       try { state.categories = JSON.parse(savedCats); _rebuildWords(); } catch(e2) {}
@@ -673,15 +781,26 @@ async function init() {
     }
   }
 
-  const saved = localStorage.getItem('yueState');
-  if (saved) {
-    try { Object.assign(state, JSON.parse(saved)); } catch(e) {}
-    _rebuildWords();
+  // Load students + progress
+  try {
+    const sData = JSON.parse(localStorage.getItem('yueStudents') || '{}');
+    state.students = Array.isArray(sData.students) ? sData.students : [];
+    if (sData.loginMode) state.loginMode = sData.loginMode;
+  } catch(e) { state.students = []; }
+  try {
+    state.progress = JSON.parse(localStorage.getItem('yueProgress') || '{}');
+  } catch(e) { state.progress = {}; }
+
+  // Decide mode: if there are students, default student mode; otherwise prompt to add
+  state.mode = 'student';
+  // Restore last student if any
+  const lastStudent = localStorage.getItem('yueLastStudentId');
+  if (lastStudent && state.students.find(s => s.id === lastStudent)) {
+    state.currentStudentId = lastStudent;
   }
+
+  _renderLoginMode();
   updateProgress();
-  if (state.name) {
-    document.getElementById('studentName').value = state.name;
-  }
 }
 
 // Build flat words array from currently enabled categories
@@ -694,8 +813,457 @@ function _rebuildWords() {
       });
     }
   });
-  // Keep selectedCategoryIds in sync with enabled cats
   state.selectedCategoryIds = state.categories.filter(c => c.enabled).map(c => c.id);
+}
+
+// ================== LOGIN ==================
+let _pinBuffer = '';
+
+function _renderLoginMode() {
+  const pinMode = document.getElementById('loginPinMode');
+  const gridMode = document.getElementById('loginGridMode');
+  if (state.students.length === 0) {
+    pinMode.style.display = 'none';
+    gridMode.style.display = 'none';
+    // Show empty hint
+    const home = document.getElementById('home');
+    let hint = document.getElementById('noStudentsHint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'noStudentsHint';
+      hint.style.cssText = 'text-align:center;color:#1a1a2e;font-size:1.1em;margin:20px 0;';
+      hint.innerHTML = '<p>尚未新增任何學生</p><p style="font-size:0.95em;margin-top:10px;">請先撳「老師模式」加入學生</p>';
+      home.querySelector('.home-card').appendChild(hint);
+    }
+    hint.style.display = 'block';
+    return;
+  }
+  const hint = document.getElementById('noStudentsHint');
+  if (hint) hint.style.display = 'none';
+
+  const mode = state.loginMode;
+  if (mode === 'pin') {
+    pinMode.style.display = 'block';
+    gridMode.style.display = 'none';
+  } else if (mode === 'grid') {
+    pinMode.style.display = 'none';
+    gridMode.style.display = 'block';
+    _renderStudentGrid();
+  } else { // both — show both, students choose
+    pinMode.style.display = 'block';
+    gridMode.style.display = 'block';
+    _renderStudentGrid();
+  }
+}
+
+function pinPress(digit) {
+  if (_pinBuffer.length >= 5) return;
+  _pinBuffer += digit;
+  _updatePinDisplay();
+  if (_pinBuffer.length === 5) {
+    setTimeout(_tryPinLogin, 200);
+  }
+}
+
+function pinBackspace() {
+  _pinBuffer = _pinBuffer.slice(0, -1);
+  _updatePinDisplay();
+}
+
+function pinClear() {
+  _pinBuffer = '';
+  _updatePinDisplay();
+  document.getElementById('loginError').textContent = '';
+}
+
+function _updatePinDisplay() {
+  const slots = document.querySelectorAll('#pinDisplay .pin-slot');
+  slots.forEach((s, i) => {
+    if (i < _pinBuffer.length) {
+      s.textContent = _pinBuffer[i];
+      s.classList.add('filled');
+    } else {
+      s.textContent = '·';
+      s.classList.remove('filled');
+    }
+  });
+}
+
+function _tryPinLogin() {
+  const errEl = document.getElementById('loginError');
+  errEl.textContent = '';
+  const match = state.students.find(s => s.pin === _pinBuffer);
+  if (match) {
+    _loginStudent(match);
+  } else {
+    errEl.textContent = '❌ PIN 唔啱，再試多次';
+    _pinBuffer = '';
+    _updatePinDisplay();
+  }
+}
+
+function _renderStudentGrid() {
+  const grid = document.getElementById('studentGrid');
+  grid.innerHTML = state.students.map(s => `
+    <div class="student-avatar-card" onclick="quickLoginStudent('${s.id}')" style="border-color:${s.color || '#f59e0b'};">
+      <span class="student-emoji">${s.avatar || '🌟'}</span>
+      <div style="font-size:1.2em;font-weight:bold;">${s.name}</div>
+    </div>
+  `).join('');
+}
+
+function quickLoginStudent(studentId) {
+  const s = state.students.find(x => x.id === studentId);
+  if (!s) return;
+  document.getElementById('loginError2').textContent = '';
+  // If PIN set, ask for it; otherwise login directly
+  if (s.pin && s.pin.length === 5) {
+    const input = prompt(`「${s.name}」請輸入你嘅 5 位 PIN：`);
+    if (input === null) return;
+    if (input !== s.pin) {
+      document.getElementById('loginError2').textContent = '❌ PIN 唔啱';
+      return;
+    }
+  }
+  _loginStudent(s);
+}
+
+function _loginStudent(student) {
+  state.currentStudentId = student.id;
+  state.mode = 'student';
+  localStorage.setItem('yueLastStudentId', student.id);
+  document.getElementById('hubGreeting').textContent = `👋 ${student.avatar || '🌟'} ${student.name}，準備好未？`;
+  _rebuildWords();
+  goTo('hub');
+  showToast(`歡迎返嚟，${student.name}！`);
+}
+
+function enterTeacherMode() {
+  if (state.students.length === 0 && state.categories.length > 0) {
+    // first time, seed one demo student
+    addNewStudent({ silent: true, seed: { name: '示範學生', pin: '11111', avatar: '🌟', color: '#f59e0b' } });
+  }
+  state.mode = 'teacher';
+  // teacher skips student login
+  goTo('hub');
+  document.getElementById('hubGreeting').textContent = '🔧 老師模式';
+}
+
+// ================== STUDENT CRUD ==================
+let _editingStudent = null; // { studentId } | null
+
+function addNewStudent(opts) {
+  opts = opts || {};
+  _editingStudent = { studentId: null };
+  document.getElementById('studentModalTitle').textContent = '👨‍🎓 新增學生';
+  document.getElementById('sm_name').value = opts.seed ? opts.seed.name : '';
+  document.getElementById('sm_pin').value = opts.seed ? (opts.seed.pin || '') : '';
+  document.getElementById('sm_color').value = opts.seed ? (opts.seed.color || '#f59e0b') : '#f59e0b';
+  _renderEmojiPicker(opts.seed ? opts.seed.avatar : '🌟');
+  document.getElementById('studentModal').style.display = 'block';
+}
+
+function editStudent(studentId) {
+  const s = state.students.find(x => x.id === studentId);
+  if (!s) return;
+  _editingStudent = { studentId };
+  document.getElementById('studentModalTitle').textContent = '✏️ 編輯學生';
+  document.getElementById('sm_name').value = s.name || '';
+  document.getElementById('sm_pin').value = s.pin || '';
+  document.getElementById('sm_color').value = s.color || '#f59e0b';
+  _renderEmojiPicker(s.avatar || '🌟');
+  document.getElementById('studentModal').style.display = 'block';
+}
+
+function _renderEmojiPicker(selected) {
+  const picker = document.getElementById('sm_emoji_picker');
+  picker.innerHTML = _AVATAR_EMOJIS.map(em =>
+    `<button type="button" onclick="selectEmoji(this, '${em}')" data-emoji="${em}"
+      style="background:${em === selected ? '#f59e0b' : '#444'};font-size:1.8em;padding:6px;min-height:48px;min-width:48px;border-radius:8px;cursor:pointer;">${em}</button>`
+  ).join('');
+}
+
+let _selectedEmoji = '🌟';
+function selectEmoji(btn, em) {
+  _selectedEmoji = em;
+  document.querySelectorAll('#sm_emoji_picker button').forEach(b => {
+    b.style.background = b.dataset.emoji === em ? '#f59e0b' : '#444';
+  });
+}
+
+function saveStudentFromModal() {
+  const name = document.getElementById('sm_name').value.trim();
+  if (!name) { alert('請填寫姓名'); return; }
+  const pin = document.getElementById('sm_pin').value.trim();
+  if (pin && !/^\d{5}$/.test(pin)) { alert('PIN 必須係 5 位數字（0-9），或留空'); return; }
+  const color = document.getElementById('sm_color').value;
+  const avatar = _selectedEmoji;
+  if (_editingStudent.studentId === null) {
+    const id = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+    state.students.push({ id, name, pin, color, avatar, createdAt: new Date().toISOString() });
+  } else {
+    const s = state.students.find(x => x.id === _editingStudent.studentId);
+    if (s) { s.name = name; s.pin = pin; s.color = color; s.avatar = avatar; }
+  }
+  _persistStudents();
+  closeStudentModal();
+  renderStudentList();
+  _renderLoginMode();
+  showToast('✅ 學生已儲存');
+}
+
+function closeStudentModal() {
+  document.getElementById('studentModal').style.display = 'none';
+  _editingStudent = null;
+  _selectedEmoji = '🌟';
+}
+
+function deleteStudent(studentId) {
+  const s = state.students.find(x => x.id === studentId);
+  if (!s) return;
+  showConfirm(`確定刪除「${s.name}」？所有練習記錄都會一齊刪除。`, () => {
+    state.students = state.students.filter(x => x.id !== studentId);
+    delete state.progress[studentId];
+    if (state.currentStudentId === studentId) state.currentStudentId = null;
+    _persistStudents();
+    _persistProgress();
+    renderStudentList();
+    _renderLoginMode();
+    showToast('🗑 學生已刪除');
+  });
+}
+
+function renderStudentList() {
+  const container = document.getElementById('studentList');
+  if (state.students.length === 0) {
+    container.innerHTML = '<p style="color:rgba(255,255,255,0.6);padding:12px 0;">尚無學生，請新增。</p>';
+    return;
+  }
+  // Sync radio buttons
+  document.querySelectorAll('input[name="loginMode"]').forEach(r => {
+    r.checked = (r.value === state.loginMode);
+  });
+  container.innerHTML = state.students.map(s => {
+    const prog = state.progress[s.id] || {};
+    const attempts = prog.totalAttempts || 0;
+    return `<div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;margin:8px 0;border-left:6px solid ${s.color || '#f59e0b'};">
+      <span style="font-size:2em;">${s.avatar || '🌟'}</span>
+      <div style="flex:1;">
+        <div style="font-weight:bold;font-size:1.15em;">${s.name}</div>
+        <div style="font-size:0.9em;color:rgba(255,255,255,0.6);">
+          PIN: ${s.pin ? '****' + s.pin.slice(-2) : '（無）'} • ${attempts} 次練習
+        </div>
+      </div>
+      <button onclick="editStudent('${s.id}')" style="background:#0ea5e9;min-height:40px;padding:8px 14px;font-size:0.95em;">✏️</button>
+      <button onclick="resetStudentProgress('${s.id}')" style="background:#f59e0b;min-height:40px;padding:8px 14px;font-size:0.95em;">🔄</button>
+      <button onclick="deleteStudent('${s.id}')" style="background:#dc2626;min-height:40px;padding:8px 14px;font-size:0.95em;">🗑</button>
+    </div>`;
+  }).join('');
+}
+
+function resetStudentProgress(studentId) {
+  const s = state.students.find(x => x.id === studentId);
+  if (!s) return;
+  showConfirm(`重設「${s.name}」嘅所有練習記錄？`, () => {
+    state.progress[studentId] = {};
+    _persistProgress();
+    renderStudentList();
+    renderDashboard();
+    showToast('🔄 進度已重設');
+  });
+}
+
+function setLoginMode(mode) {
+  state.loginMode = mode;
+  _persistStudents();
+  _renderLoginMode();
+  showToast(`登入模式：${mode === 'pin' ? '5位 PIN' : mode === 'grid' ? '拼畫' : '兩者皆可'}`);
+}
+
+function _persistStudents() {
+  localStorage.setItem('yueStudents', JSON.stringify({
+    students: state.students,
+    loginMode: state.loginMode
+  }));
+}
+
+function _persistProgress() {
+  localStorage.setItem('yueProgress', JSON.stringify(state.progress));
+}
+
+// ================== PROGRESS TRACKING ==================
+function _recordAttempt(word, score, transcript) {
+  if (!state.currentStudentId) return;
+  const sid = state.currentStudentId;
+  if (!state.progress[sid]) {
+    state.progress[sid] = { byWord: {}, totalAttempts: 0, lastSession: null, scores: [] };
+  }
+  const p = state.progress[sid];
+  if (!p.byWord[word]) {
+    p.byWord[word] = { bestScore: 0, attempts: 0, lastTry: null, history: [] };
+  }
+  const w = p.byWord[word];
+  const now = new Date().toISOString();
+  w.attempts += 1;
+  w.lastTry = now;
+  if (score > w.bestScore) w.bestScore = score;
+  w.history.push({ score, transcript, at: now });
+  // Cap history at last 20
+  if (w.history.length > 20) w.history = w.history.slice(-20);
+  p.totalAttempts += 1;
+  p.lastSession = now;
+  p.scores.push({ word, score, at: now });
+  if (p.scores.length > 200) p.scores = p.scores.slice(-200);
+  _persistProgress();
+}
+
+function _switchStudent(studentId) {
+  state.currentStudentId = studentId;
+  localStorage.setItem('yueLastStudentId', studentId);
+}
+
+// ================== DASHBOARD ==================
+function renderDashboard() {
+  const container = document.getElementById('dashboardContent');
+  if (state.students.length === 0) {
+    container.innerHTML = '<p style="color:rgba(255,255,255,0.6);">尚未新增任何學生。</p>';
+    return;
+  }
+  const totalWords = state.words.length;
+  const totalAttempts = Object.values(state.progress).reduce((s, p) => s + (p.totalAttempts || 0), 0);
+  const totalCatsEnabled = state.categories.filter(c => c.enabled).length;
+
+  let html = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px;">
+      <div style="background:rgba(124,58,237,0.3);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:2.2em;font-weight:bold;">${state.students.length}</div>
+        <div style="font-size:0.9em;opacity:0.8;">學生人數</div>
+      </div>
+      <div style="background:rgba(34,197,94,0.3);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:2.2em;font-weight:bold;">${totalAttempts}</div>
+        <div style="font-size:0.9em;opacity:0.8;">總練習次數</div>
+      </div>
+      <div style="background:rgba(245,158,11,0.3);border-radius:12px;padding:14px;text-align:center;">
+        <div style="font-size:2.2em;font-weight:bold;">${totalWords}</div>
+        <div style="font-size:0.9em;opacity:0.8;">可練習詞彙</div>
+      </div>
+    </div>
+  `;
+
+  html += state.students.map(s => {
+    const p = state.progress[s.id] || {};
+    const attempts = p.totalAttempts || 0;
+    const lastSession = p.lastSession ? new Date(p.lastSession).toLocaleString('zh-HK', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' }) : '—';
+    const mastered = Object.values(p.byWord || {}).filter(w => w.bestScore >= 80).length;
+    const struggling = Object.values(p.byWord || {}).filter(w => w.attempts >= 2 && w.bestScore < 60).length;
+    const avg = attempts > 0 ? Math.round((p.scores || []).reduce((sum, x) => sum + x.score, 0) / (p.scores || []).length) : 0;
+    return `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:10px 0;border-left:6px solid ${s.color || '#f59e0b'};">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <span style="font-size:1.8em;">${s.avatar || '🌟'}</span>
+        <span style="font-weight:bold;font-size:1.2em;flex:1;">${s.name}</span>
+        <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${attempts} 次</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:0.9em;text-align:center;">
+        <div style="background:rgba(34,197,94,0.2);padding:6px;border-radius:8px;">✅ ${mastered} 已掌握</div>
+        <div style="background:rgba(239,68,68,0.2);padding:6px;border-radius:8px;">⚠️ ${struggling} 待加強</div>
+        <div style="background:rgba(245,158,11,0.2);padding:6px;border-radius:8px;">📊 平均 ${avg} 分</div>
+      </div>
+      <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-top:8px;">最後練習：${lastSession}</div>
+      <button onclick="showStudentDetail('${s.id}')" style="margin-top:8px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:42px;">📋 詳細記錄</button>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+function showStudentDetail(studentId) {
+  const s = state.students.find(x => x.id === studentId);
+  if (!s) return;
+  const p = state.progress[studentId] || { byWord: {}, scores: [] };
+  const words = Object.entries(p.byWord || {}).sort((a, b) => b[1].attempts - a[1].attempts);
+  let html = `<div style="max-width:700px;margin:0 auto;">
+    <h2 style="color:#f59e0b;">${s.avatar || '🌟'} ${s.name} 練習記錄</h2>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:10px 0;">
+      <div style="font-size:1.1em;margin-bottom:8px;">
+        總練習次數：<b>${p.totalAttempts || 0}</b>
+        ${p.lastSession ? '• 最後：' + new Date(p.lastSession).toLocaleString('zh-HK') : ''}
+      </div>
+    </div>
+    <h3 style="color:#f59e0b;margin-top:20px;">逐個詞彙</h3>
+    <div style="max-height:400px;overflow:auto;">`;
+  if (words.length === 0) {
+    html += '<p style="color:rgba(255,255,255,0.6);">尚未有練習記錄</p>';
+  } else {
+    words.forEach(([word, data]) => {
+      const status = data.bestScore >= 80 ? '✅' : data.bestScore >= 60 ? '👍' : '⚠️';
+      const lastTry = data.lastTry ? new Date(data.lastTry).toLocaleString('zh-HK', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' }) : '';
+      html += `<div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;margin:6px 0;">
+        <span style="font-size:1.5em;">${status}</span>
+        <div style="flex:1;">
+          <div style="font-weight:bold;font-size:1.1em;">${word}</div>
+          <div style="font-size:0.85em;color:rgba(255,255,255,0.6);">${data.attempts} 次嘗試 • 最高 ${data.bestScore} 分 • ${lastTry}</div>
+        </div>
+      </div>`;
+    });
+  }
+  html += `</div><button onclick="renderDashboard();switchAdminTab('dashboard');" style="margin-top:20px;background:#666;width:100%;">返回 Dashboard</button></div>`;
+  document.getElementById('dashboardContent').innerHTML = html;
+}
+
+// ================== EXPORT / IMPORT STUDENTS ==================
+function exportStudentsJson() {
+  const data = {
+    _comment: 'SEN 粵語朗讀 — 學生資料 + 進度',
+    _exported_at: new Date().toISOString(),
+    students: state.students,
+    progress: state.progress,
+    loginMode: state.loginMode
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'students_' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('⬇️ 已下載學生資料');
+}
+
+function importStudentsJson(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.students || !Array.isArray(data.students)) {
+        throw new Error('JSON 格式錯誤');
+      }
+      showConfirm(`將匯入 ${data.students.length} 個學生（同 ${Object.keys(data.progress || {}).length} 個進度記錄）。現有資料會被合併（同名學生覆蓋）。確定？`, () => {
+        // Merge: by id, new wins
+        const existingById = {};
+        state.students.forEach(s => existingById[s.id] = s);
+        data.students.forEach(s => { existingById[s.id] = s; });
+        state.students = Object.values(existingById);
+        if (data.progress) {
+          Object.assign(state.progress, data.progress);
+        }
+        if (data.loginMode) state.loginMode = data.loginMode;
+        _persistStudents();
+        _persistProgress();
+        renderStudentList();
+        _renderLoginMode();
+        renderDashboard();
+        showToast('⬆️ 匯入成功！');
+      });
+    } catch(err) {
+      alert('匯入失敗：' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // Admin panel
@@ -757,22 +1325,23 @@ let _editingCatId = null;
 let _confirmCallback = null;
 
 function switchAdminTab(tab) {
-  const settingsBtn = document.getElementById('tabSettingsBtn');
-  const editBtn = document.getElementById('tabEditBtn');
-  const settingsContent = document.getElementById('tabSettingsContent');
-  const editContent = document.getElementById('tabEditContent');
-  if (tab === 'settings') {
-    settingsBtn.style.background = '#7c3aed';
-    editBtn.style.background = '#444';
-    settingsContent.style.display = 'block';
-    editContent.style.display = 'none';
-  } else {
-    settingsBtn.style.background = '#444';
-    editBtn.style.background = '#7c3aed';
-    settingsContent.style.display = 'none';
-    editContent.style.display = 'block';
-    renderEditCategoryList();
-  }
+  const tabs = [
+    { btn: 'tabSettingsBtn', content: 'tabSettingsContent' },
+    { btn: 'tabEditBtn', content: 'tabEditContent' },
+    { btn: 'tabStudentsBtn', content: 'tabStudentsContent' },
+    { btn: 'tabDashboardBtn', content: 'tabDashboardContent' }
+  ];
+  const activeBtn = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Btn';
+  const activeContent = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Content';
+  tabs.forEach(t => {
+    const btn = document.getElementById(t.btn);
+    const content = document.getElementById(t.content);
+    if (btn) btn.style.background = (t.btn === activeBtn) ? '#7c3aed' : '#444';
+    if (content) content.style.display = (t.content === activeContent) ? 'block' : 'none';
+  });
+  if (tab === 'edit') renderEditCategoryList();
+  if (tab === 'students') renderStudentList();
+  if (tab === 'dashboard') renderDashboard();
 }
 
 function renderEditCategoryList() {
