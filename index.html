@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>粵語朗讀評分 • SEN</title>
+<!-- Transformers.js for on-device Whisper ASR (lazy loaded) -->
+<script type="module">
+  // Just expose the CDN URL as a hint. Actual dynamic import happens on first use.
+  window.TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5';
+</script>
 <style>
 :root { --purple:#7c3aed; --gold:#f59e0b; --green:#22c55e; --red:#ef4444; }
 * { box-sizing:border-box; margin:0; padding:0; }
@@ -85,6 +90,9 @@ button:active { transform:scale(0.95); }
     <div style="border-top:2px solid rgba(0,0,0,0.1);margin-top:30px;padding-top:20px;">
       <button onclick="enterTeacherMode()" style="background:#555;font-size:1.05em;padding:12px 28px;min-height:50px;">🔧 老師模式</button>
     </div>
+
+    <!-- Engine status (download progress for Whisper) -->
+    <div id="engineStatusHome" style="margin-top:20px;font-size:0.9em;color:#666;"></div>
   </div>
 </div>
 
@@ -238,6 +246,21 @@ button:active { transform:scale(0.95); }
             揀學生評估用嘅語音引擎。所有引擎都免費；私隱視乎選擇。
           </p>
           <div id="asrEngineList"></div>
+
+          <!-- Whisper cache status (only shows when Whisper is / was used) -->
+          <div id="whisperCacheStatus" style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;display:none;">
+            <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📦 Whisper 模型狀態</p>
+            <div id="whisperCacheContent" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
+            <button onclick="preloadWhisper()" style="margin-top:10px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">
+              ⬇️ 預先下載 Whisper 模型
+            </button>
+            <button onclick="clearWhisperCache()" style="margin-top:8px;width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">
+              🗑 清除 Whisper 模型 cache
+            </button>
+            <p style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-top:8px;">
+              模型約 40MB。下載一次後會 cache，離線可用。
+            </p>
+          </div>
 
           <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:20px;">
             <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📊 引擎使用統計</p>
@@ -422,28 +445,60 @@ const _ASR_ENGINES = {
     costEmoji: '🆓',
     privacyEmoji: '🔒',
     isAvailable() {
-      // Check for iPad / desktop with reasonable CPU. Whisper.cpp will lazy-load.
-      return typeof Worker !== 'undefined';
+      // Check for WebAssembly + Float32Array (needed by transformers.js)
+      return typeof WebAssembly !== 'undefined' && typeof Worker !== 'undefined';
     },
-    transcribe(audioBlob, onProgress) {
-      // Phase-3 stub: real implementation would lazy-load whisper.cpp WASM
-      // For now, return a marker so the engine switch works end-to-end.
-      if (onProgress) onProgress({ stage: 'lazy-load', message: 'Whisper 模型準備中…' });
-      return new Promise((resolve, reject) => {
-        setTimeout(() => {
-          if (onProgress) onProgress({ stage: 'transcribe', message: 'Whisper 識別中…' });
-          setTimeout(() => {
-            // MOCK: simulate a reasonable transcript for the target word
-            // Real impl: transcribe audioBlob with whisper.cpp, return text
-            // Fallback: return empty so caller can fall back to webspeech
-            resolve({
-              text: '',  // signal: no local transcription available
-              confidence: 0,
-              raw: { mocked: true, engineId: 'whisper' }
-            });
-          }, 1500);
-        }, 800);
-      });
+    _pipeline: null,
+    _pipelineLoading: null,
+    async _ensurePipeline(onProgress) {
+      if (this._pipeline) return this._pipeline;
+      if (this._pipelineLoading) return this._pipelineLoading;
+      this._pipelineLoading = (async () => {
+        if (onProgress) onProgress({ stage: 'cdn-load', message: '⏳ 載入 Transformers.js…' });
+        // Dynamic import — only loaded when first needed
+        const lib = await import(window.TRANSFORMERS_CDN);
+        if (onProgress) onProgress({ stage: 'model-load', message: '⏳ 下載 Whisper 模型（約 40MB，只需一次）…' });
+        const pipe = await lib.pipeline(
+          'automatic-speech-recognition',
+          'Xenova/whisper-tiny',
+          {
+            // q8 量化 — 適合 WASM
+            dtype: 'q8',
+            // Use WebGPU if available for speed; else fall back to WASM
+            device: typeof navigator !== 'undefined' && navigator.gpu ? 'webgpu' : 'wasm'
+          }
+        );
+        this._pipeline = pipe;
+        return pipe;
+      })();
+      return this._pipelineLoading;
+    },
+    async transcribe(audioBlob, onProgress) {
+      try {
+        const pipe = await this._ensurePipeline(onProgress);
+        if (onProgress) onProgress({ stage: 'preprocess', message: '⏳ 處理音訊…' });
+        // Convert audioBlob to 16kHz mono Float32Array
+        const audio = await _blobToFloat32(audioBlob);
+        if (onProgress) onProgress({ stage: 'transcribe', message: '⏳ Whisper 識別中…' });
+        // Cantonese: whisper doesn't have 'cantonese' code, but 'zh' works
+        // (model is multilingual). Add language hint to bias toward Chinese.
+        const result = await pipe(audio, {
+          language: 'chinese',  // closer to Cantonese than 'zh'
+          task: 'transcribe',
+          // Chunked for long audio (we send ~4s, so this is safe)
+          chunk_length_s: 30,
+          stride_length_s: 5
+        });
+        const text = (result && result.text) ? result.text.trim() : '';
+        return {
+          text,
+          confidence: 1,  // transformers.js doesn't expose confidence reliably
+          raw: result
+        };
+      } catch (e) {
+        console.error('Whisper transcribe error:', e);
+        return { text: '', confidence: 0, raw: { error: e.message, engineId: 'whisper' } };
+      }
     }
   },
   custom: {
@@ -471,6 +526,30 @@ const _ASR_ENGINES = {
 
 const _AVATAR_EMOJIS = ['🌟','🐯','🐻','🦁','🐼','🐨','🐸','🐵','🦊','🐰','🐱','🐶','🦄','🐙','🐢','🦋','🌸','🌈','🍎','🍇','⚽','🎨','🎵','🚀'];
 
+// ================== AUDIO PREPROCESSING ==================
+// Convert any audio Blob (webm/ogg/wav) → 16kHz mono Float32Array (what Whisper expects)
+async function _blobToFloat32(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const AudioCtx = window.AudioContext || window.webkitAudioContext;
+  const audioCtx = new AudioCtx();
+  try {
+    // decodeAudioData works for webm/ogg/wav/mp4 in modern browsers
+    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+    // Resample to 16kHz mono
+    const targetSampleRate = 16000;
+    const numSamples = Math.ceil(decoded.duration * targetSampleRate);
+    const offlineCtx = new OfflineAudioContext(1, numSamples, targetSampleRate);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+    const rendered = await offlineCtx.startRendering();
+    return rendered.getChannelData(0);  // Float32Array
+  } finally {
+    audioCtx.close();
+  }
+}
+
 function speak(text) {
   if ('speechSynthesis' in window) {
     speechSynthesis.cancel();
@@ -495,7 +574,13 @@ function goTo(page) {
   const ind = document.getElementById('engineIndicator');
   if (ind && page === 'hub') {
     const e = _ASR_ENGINES[state.asrEngine];
-    if (e) ind.textContent = `🎙 評估引擎：${e.name} ${e.privacyEmoji}`;
+    if (e) {
+      let extra = '';
+      if (e.id === 'whisper') {
+        extra = _ASR_ENGINES.whisper._pipeline ? '（已預載）' : '（首次需下載 ~40MB）';
+      }
+      ind.textContent = `🎙 評估引擎：${e.name} ${e.privacyEmoji}${extra}`;
+    }
   }
 }
 
@@ -1408,6 +1493,9 @@ function renderAsrEngineList() {
       ).join('');
     }
   }
+
+  // Show whisper cache status if relevant
+  checkWhisperCache();
 }
 
 function _getAsrStats() {
@@ -1425,6 +1513,88 @@ function clearAudioBaselines() {
   showConfirm('清除所有聲紋 baseline？清除後自訂模式需要重新建立基線。', () => {
     localStorage.removeItem('yueAudioBaselines');
     showToast('🗑 Baseline 已清除');
+  });
+}
+
+// ================== WHISPER CACHE MANAGEMENT ==================
+async function preloadWhisper() {
+  const statusEl = document.getElementById('whisperCacheContent');
+  if (statusEl) statusEl.innerHTML = '⏳ 開始下載…';
+  try {
+    await _ASR_ENGINES.whisper._ensurePipeline((p) => {
+      if (statusEl) statusEl.innerHTML = p.message || '⏳ 處理中…';
+    });
+    if (statusEl) statusEl.innerHTML = '✅ 模型已下載並 cache。';
+    showToast('✅ Whisper 已預載！');
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = '❌ 下載失敗：' + e.message;
+    showToast('❌ 預載失敗');
+  }
+}
+
+async function checkWhisperCache() {
+  const container = document.getElementById('whisperCacheStatus');
+  const content = document.getElementById('whisperCacheContent');
+  if (!container || !content) return;
+  // Show the cache section when system tab is rendered AND whisper was used
+  if (state.asrEngine === 'whisper' || _ASR_ENGINES.whisper._pipeline) {
+    container.style.display = 'block';
+    if (_ASR_ENGINES.whisper._pipeline) {
+      content.innerHTML = '✅ 模型已載入到記憶體。重新整理後會自動從 cache 恢復。';
+    } else {
+      // Check if there's likely a cached model via Cache Storage
+      try {
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          const hfCache = keys.find(k => k.includes('huggingface') || k.includes('transformers'));
+          if (hfCache) {
+            content.innerHTML = '✅ 模型已 cache（離線可用）。點下方按鈕預載到記憶體。';
+          } else {
+            content.innerHTML = '⚠️ 模型未下載。點下方按鈕開始下載（約 40MB，需網絡）。';
+          }
+        } else {
+          content.innerHTML = '⚠️ 尚未下載。';
+        }
+      } catch (e) {
+        content.innerHTML = '⚠️ 狀態不明：' + e.message;
+      }
+    }
+  } else {
+    container.style.display = 'none';
+  }
+}
+
+async function clearWhisperCache() {
+  showConfirm('清除 Whisper 模型 cache？清除後需要重新下載。', async () => {
+    try {
+      // Clear transformers.js in-memory pipeline
+      _ASR_ENGINES.whisper._pipeline = null;
+      _ASR_ENGINES.whisper._pipelineLoading = null;
+      // Clear Cache Storage entries that look like HF model files
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        for (const key of keys) {
+          if (key.includes('huggingface') || key.includes('transformers') || key.includes('onnx')) {
+            await caches.delete(key);
+          }
+        }
+      }
+      // Clear IndexedDB caches that transformers.js uses
+      if ('databases' in indexedDB) {
+        try {
+          const dbs = await indexedDB.databases();
+          for (const db of dbs) {
+            if (db.name && (db.name.includes('huggingface') || db.name.includes('transformers') || db.name.includes('onnx'))) {
+              indexedDB.deleteDatabase(db.name);
+            }
+          }
+        } catch(e) {}
+      }
+      showToast('🗑 Whisper cache 已清除');
+      checkWhisperCache();
+    } catch (e) {
+      showToast('❌ 清除失敗：' + e.message);
+    }
   });
 }
 
