@@ -130,7 +130,8 @@ let state = {
     { char:'呼呼', pinyin:'fu fu', meaning:'風聲', target:'呼呼', category:'聲音' }
   ],
   assessmentIndex: 0,
-  assessmentScores: []
+  assessmentScores: [],
+  selectedCategories: ['季節','活動','聲音']
 };
 
 function speak(text) {
@@ -228,17 +229,83 @@ function practiceWord(idx) {
 function startAssessment() {
   state.assessmentIndex = 0;
   state.assessmentScores = [];
-  renderAssessment();
+  showCategorySelector();
+}
+
+function showCategorySelector() {
+  const container = document.getElementById('assessmentContent');
+  const cats = ['季節','活動','聲音'];
+  let html = `<div style="max-width:600px;margin:0 auto;text-align:center;">
+    <h3 style="color:#f59e0b;margin-bottom:20px;">選擇評估範疇（可多選）</h3>`;
+  cats.forEach(cat => {
+    const checked = state.selectedCategories.includes(cat) ? 'checked' : '';
+    html += `<label style="display:block;margin:12px 0;font-size:1.4em;">
+      <input type="checkbox" ${checked} onchange="toggleCategory('${cat}', this.checked)" style="width:30px;height:30px;vertical-align:middle;"> ${cat}
+    </label>`;
+  });
+  html += `<button onclick="startFilteredAssessment()" style="margin-top:30px;width:80%;">開始評估 →</button>
+    <button onclick="goTo('hub')" style="margin-top:12px;background:#666;width:80%;">返回</button>
+  </div>`;
+  container.innerHTML = html;
   goTo('assessment');
+}
+
+function toggleCategory(cat, checked) {
+  if (checked) {
+    if (!state.selectedCategories.includes(cat)) state.selectedCategories.push(cat);
+  } else {
+    state.selectedCategories = state.selectedCategories.filter(c => c !== cat);
+  }
+}
+
+function startFilteredAssessment() {
+  const filtered = state.words.filter(w => state.selectedCategories.includes(w.category));
+  if (filtered.length === 0) {
+    alert('請至少選擇一個範疇');
+    return;
+  }
+  state.filteredWords = filtered;
+  state.assessmentIndex = 0;
+  state.assessmentScores = [];
+  renderFilteredAssessment();
+}
+
+function renderFilteredAssessment() {
+  const container = document.getElementById('assessmentContent');
+  if (state.assessmentIndex >= state.filteredWords.length) {
+    finishAll();
+    return;
+  }
+  const w = state.filteredWords[state.assessmentIndex];
+  state.currentWord = w;
+  const imgMap = {
+    '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
+    '季節':'gwai-jit.png','北風':'bak-fung.png','雪花':'suet-fa.png','黃葉':'wong-yip.png',
+    '蝴蝶':'woo-dip.png','游泳':'yau-wing.png','燒烤':'siu-fu.png','野餐':'ye-chan.png','火鍋':'fo-wo.png',
+    '滴滴答答':'dik-dik.png','嘩啦嘩啦':'wa-la.png','叮叮咚咚':'ding-ding.png','轟隆轟隆':'hung-lung.png','呼呼':'fu-fu.png'
+  };
+  const img = imgMap[w.char] ? `<img src="assets/images/${imgMap[w.char]}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
+  container.innerHTML = `
+    <div class="vocab-card" style="margin-bottom:30px;">
+      ${img}
+      <div class="vocab-char">${w.char}</div>
+      <div class="vocab-pinyin">${w.pinyin}</div>
+      <div style="margin:12px 0;color:#666;">${w.meaning}</div>
+      <button onclick="speak('${w.char}')" style="background:#7c3aed;width:100%;">🔊 聽正確發音</button>
+    </div>
+    <button class="record-btn" onclick="startRecording()">🎤 開始朗讀（點擊錄音）</button>
+    <div id="recordingStatus" style="text-align:center;margin-top:20px;font-size:1.3em;color:#f59e0b;"></div>
+  `;
 }
 
 function renderAssessment() {
   const container = document.getElementById('assessmentContent');
-  if (state.assessmentIndex >= state.words.length) {
+  const wordsToUse = state.filteredWords || state.words;
+  if (state.assessmentIndex >= wordsToUse.length) {
     finishAll();
     return;
   }
-  const w = state.words[state.assessmentIndex];
+  const w = wordsToUse[state.assessmentIndex];
   state.currentWord = w;
   const imgMap = {
     '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
