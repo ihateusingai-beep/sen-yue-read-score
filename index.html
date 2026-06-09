@@ -378,8 +378,16 @@ function scorePronunciation(transcript) {
   const uClean = clean(transcript);
   const similarity = calculateSimilarity(uClean, tClean);
   const bonus = (uClean.includes(tClean) || tClean.includes(uClean)) ? 20 : 0;
-  const aiScore = Math.min(100, Math.floor(similarity * 100 + bonus));
-  const feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 60 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
+  
+  // 新：字元重疊 + 首字接近發音 bonus（減輕荷刻度）
+  const targetChars = [...tClean];
+  const userChars = [...uClean];
+  const overlap = targetChars.filter(c => userChars.includes(c)).length;
+  const overlapBonus = overlap * 18;
+  const firstMatch = (targetChars[0] && userChars[0] && targetChars[0] === userChars[0]) ? 15 : 0;
+  const aiScore = Math.min(100, Math.floor(similarity * 50 + overlapBonus + firstMatch + bonus));
+  
+  const feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 55 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
 
   state.assessmentScores.push({ word: w.char, score: aiScore, transcript });
   state.score += aiScore;
