@@ -225,6 +225,9 @@ button:active { transform:scale(0.95); }
           <button onclick="addNewStudent()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">
             ＋ 新增學生
           </button>
+          <button onclick="reAddDemoStudent()" style="margin-top:8px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">
+            🌟 加返示範同學 (PIN 00000)
+          </button>
 
           <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
             <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">
@@ -1240,8 +1243,9 @@ async function init() {
     state.students = Array.isArray(sData.students) ? sData.students : [];
     if (sData.loginMode) state.loginMode = sData.loginMode;
   } catch(e) { state.students = []; }
-  // Seed default student on very first run (no localStorage yueStudents at all)
-  if (state.students.length === 0 && !localStorage.getItem('yueStudents')) {
+  // Always re-seed a demo student if the list is empty
+  // (handles: first run, teacher deleted all, cleared localStorage — never deadlock)
+  if (state.students.length === 0) {
     state.students = [{
       id: 's_demo',
       name: '示範同學',
@@ -1512,6 +1516,10 @@ function closeStudentModal() {
 function deleteStudent(studentId) {
   const s = state.students.find(x => x.id === studentId);
   if (!s) return;
+  if (s.id === 's_demo') {
+    showToast('⚠️ 預設學生「示範同學」刪唔到（會自動恢復）');
+    return;
+  }
   showConfirm(`確定刪除「${s.name}」？所有練習記錄都會一齊刪除。`, () => {
     state.students = state.students.filter(x => x.id !== studentId);
     delete state.progress[studentId];
@@ -1537,17 +1545,18 @@ function renderStudentList() {
   container.innerHTML = state.students.map(s => {
     const prog = state.progress[s.id] || {};
     const attempts = prog.totalAttempts || 0;
+    const isDemo = s.id === 's_demo';
     return `<div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;margin:8px 0;border-left:6px solid ${s.color || '#f59e0b'};">
       <span style="font-size:2em;">${s.avatar || '🌟'}</span>
       <div style="flex:1;">
-        <div style="font-weight:bold;font-size:1.15em;">${s.name}</div>
+        <div style="font-weight:bold;font-size:1.15em;">${s.name}${isDemo ? ' <span style="font-size:0.7em;color:rgba(245,158,11,0.8);font-weight:normal;">（預設）</span>' : ''}</div>
         <div style="font-size:0.9em;color:rgba(255,255,255,0.6);">
           PIN: ${s.pin ? '****' + s.pin.slice(-2) : '（無）'} • ${attempts} 次練習
         </div>
       </div>
       <button onclick="editStudent('${s.id}')" style="background:#0ea5e9;min-height:40px;padding:8px 14px;font-size:0.95em;">✏️</button>
       <button onclick="resetStudentProgress('${s.id}')" style="background:#f59e0b;min-height:40px;padding:8px 14px;font-size:0.95em;">🔄</button>
-      <button onclick="deleteStudent('${s.id}')" style="background:#dc2626;min-height:40px;padding:8px 14px;font-size:0.95em;">🗑</button>
+      ${isDemo ? '<button disabled title="預設學生，重新整理頁面會自動恢復" style="background:#666;opacity:0.4;min-height:40px;padding:8px 14px;font-size:0.95em;cursor:not-allowed;">🗑</button>' : `<button onclick="deleteStudent('${s.id}')" style="background:#dc2626;min-height:40px;padding:8px 14px;font-size:0.95em;">🗑</button>`}
     </div>`;
   }).join('');
 }
@@ -1576,6 +1585,25 @@ function _persistStudents() {
     students: state.students,
     loginMode: state.loginMode
   }));
+}
+
+function reAddDemoStudent() {
+  if (state.students.find(s => s.id === 's_demo')) {
+    showToast('⚠️ 示範同學已經喺度');
+    return;
+  }
+  state.students.unshift({
+    id: 's_demo',
+    name: '示範同學',
+    pin: '00000',
+    avatar: '🌟',
+    color: '#f59e0b',
+    createdAt: new Date().toISOString()
+  });
+  _persistStudents();
+  renderStudentList();
+  _renderLoginMode();
+  showToast('✅ 示範同學已加返');
 }
 
 function _persistProgress() {
