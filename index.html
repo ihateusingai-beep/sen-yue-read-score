@@ -309,7 +309,6 @@ button:active { transform:scale(0.95); }
     <div id="resultFeedback" style="font-size:1.4em;margin:20px 0;"></div>
     <div id="resultAI" style="background:#f3e8ff;padding:16px;border-radius:16px;margin:20px 0;"></div>
     <button onclick="nextAssessment()" style="background:#22c55e;width:100%;margin-top:20px;">下一個詞彙 →</button>
-    <button onclick="finishAll()" style="background:#f59e0b;width:100%;margin-top:12px;">完成評估 🏆</button>
   </div>
 </div>
 
@@ -1033,6 +1032,8 @@ function nextAssessment() {
 }
 
 function finishAll() {
+  // Guard: only mark complete if student actually did some attempts
+  if (state.assessmentScores.length === 0) return;
   state.completed.assessment = true;
   const avg = Math.round(state.assessmentScores.reduce((s, x) => s + x.score, 0) / state.assessmentScores.length);
   const container = document.getElementById('assessmentContent');
@@ -1042,7 +1043,7 @@ function finishAll() {
       <div style="font-size:2.8em;color:#f59e0b;margin:20px 0;">${avg} / 100</div>
       <div style="font-size:1.5em;">平均分：${avg}分<br>你好叻！</div>
       <button onclick="printCert()" style="background:#f59e0b;width:100%;margin-top:30px;">📜 打印證書</button>
-      <button onclick="resetAll()" style="background:#666;width:100%;margin-top:12px;">重新開始</button>
+      <button onclick="goTo('hub');" style="background:#666;width:100%;margin-top:12px;">🏠 返回中心</button>
     </div>
   `;
   updateHubStatus();
@@ -1082,11 +1083,6 @@ function showConfetti(count) {
 const style = document.createElement('style');
 style.textContent = `@keyframes fall { to { transform:translateY(100vh) rotate(720deg); opacity:0; } }`;
 document.head.appendChild(style);
-
-function resetAll() {
-  localStorage.removeItem('yueState');
-  location.reload();
-}
 
 function showTeacherRecords() {
   // legacy: redirect to dashboard
