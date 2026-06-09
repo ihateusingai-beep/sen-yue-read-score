@@ -952,7 +952,7 @@ function printCert() {
       <p style="font-size:1.8em;">已成功完成粵語詞彙朗讀評估</p>
       <div class="score">${avg} / 100</div>
       <p style="font-size:1.6em;">日期：${new Date().toLocaleDateString('zh-HK')}</p>
-      <p style="margin-top:60px;font-size:1.4em;color:#c5a26f;">匡智張玉瓊晨暉學校 • 粵語朗讀評分</p>
+      <p style="margin-top:60px;font-size:1.4em;color:#c5a26f;">匡智張玉瓊晨輝學校 • 粵語朗讀評分</p>
     </body></html>
   `);
   win.print();
@@ -2397,7 +2397,7 @@ function exportStudentReport(studentId) {
     <h1>${s.avatar || '🌟'} ${s.name} — 粵語朗讀練習報告</h1>
     <div class="meta">
       報告產生日期：${new Date().toLocaleString('zh-HK')}<br>
-      學校：匡智張玉瓊晨暉學校<br>
+      學校：匡智張玉瓊晨輝學校<br>
       評估引擎：${state.asrEngine}
     </div>
     <div class="stats">
@@ -2421,7 +2421,7 @@ function exportStudentReport(studentId) {
       </tbody>
     </table>`}
     <div class="footer">
-      匡智張玉瓊晨暉學校 • 粵語朗讀評分系統<br>
+      匡智張玉瓊晨輝學校 • 粵語朗讀評分系統<br>
       本報告由「粵語朗讀評分」App 自動產生
     </div>
   </body></html>`);
@@ -2456,7 +2456,7 @@ function exportClassReport() {
     <h1>📊 全班粵語朗讀練習報告</h1>
     <div class="meta">
       報告產生日期：${new Date().toLocaleString('zh-HK')}<br>
-      學校：匡智張玉瓊晨暉學校 • 學生人數：${state.students.length} • 總練習次數：${totalAttempts}
+      學校：匡智張玉瓊晨輝學校 • 學生人數：${state.students.length} • 總練習次數：${totalAttempts}
     </div>
     <h2>👨‍🎓 學生表現一覽</h2>
     <table>
@@ -2486,7 +2486,7 @@ function exportClassReport() {
       </tbody>
     </table>`}
     <div class="footer">
-      匡智張玉瓊晨暉學校 • 粵語朗讀評分系統<br>
+      匡智張玉瓊晨輝學校 • 粵語朗讀評分系統<br>
       本報告由「粵語朗讀評分」App 自動產生
     </div>
   </body></html>`);

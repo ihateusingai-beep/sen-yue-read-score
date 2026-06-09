@@ -124,7 +124,7 @@ sen-yue-read-score/
 
 ## 🏫 學校設定
 
-- 學校：匡智張玉瓊晨暉學校
+- 學校：匡智張玉瓊晨輝學校
 - 對象：中度智障學生
 - 設計：SEN 觸控友善、深色主題、廣東話優先
 
@@ -140,4 +140,4 @@ MIT
 
 - [Hugging Face Transformers.js](https://huggingface.co/docs/transformers.js) — 真實 ASR 評估
 - [Xenova/whisper-tiny](https://huggingface.co/Xenova/whisper-tiny) — 廣東話友善嘅 Whisper 模型
-- [匡智張玉瓊晨暉學校](https://www.hkcn.org/) — SEN 教育專業意見
+- [匡智張玉瓊晨輝學校](http://www.hcwmc.edu.hk/) — 特殊教育專業意見
