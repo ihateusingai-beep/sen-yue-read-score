@@ -2018,6 +2018,10 @@ function _switchStudent(studentId) {
 // ================== DASHBOARD ==================
 // Time period filter for dashboard
 let _dashFilter = 'all'; // 'all' | 'week' | 'month'
+// Sort order for student cards. 'default' = creation order (state.students order).
+// 'followup' = most-needs-help first; 'progress' = biggest recent gain first;
+// 'practice' = fewest attempts first.
+let _dashSort = 'default';
 // Word drill-down: when set, dashboard shows an inline panel listing students
 // struggling with this word. Cleared by closing the panel.
 let _drillDownWord = null;
@@ -2063,10 +2067,19 @@ function renderDashboard() {
   const avgScore = allScores.length > 0 ? Math.round(allScores.reduce((s, x) => s + x.score, 0) / allScores.length) : 0;
 
   let html = `
-    <div style="display:flex;gap:6px;margin-bottom:14px;background:rgba(0,0,0,0.2);border-radius:10px;padding:4px;">
+    <div style="display:flex;gap:6px;margin-bottom:10px;background:rgba(0,0,0,0.2);border-radius:10px;padding:4px;">
       <button onclick="_dashFilter='all';renderDashboard();" style="flex:1;background:${_dashFilter==='all'?'#7c3aed':'transparent'};font-size:0.95em;padding:8px;min-height:40px;border-radius:8px;">全部</button>
       <button onclick="_dashFilter='month';renderDashboard();" style="flex:1;background:${_dashFilter==='month'?'#7c3aed':'transparent'};font-size:0.95em;padding:8px;min-height:40px;border-radius:8px;">本月</button>
       <button onclick="_dashFilter='week';renderDashboard();" style="flex:1;background:${_dashFilter==='week'?'#7c3aed':'transparent'};font-size:0.95em;padding:8px;min-height:40px;border-radius:8px;">本週</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <span style="font-size:0.85em;color:rgba(255,255,255,0.6);">排序：</span>
+      <select onchange="_dashSort=this.value;renderDashboard();" style="flex:1;background:rgba(0,0,0,0.3);color:#fff;border:1px solid rgba(255,255,255,0.2);border-radius:8px;padding:6px 10px;font-size:0.9em;min-height:36px;">
+        <option value="default" ${_dashSort==='default'?'selected':''}>預設（建立順序）</option>
+        <option value="followup" ${_dashSort==='followup'?'selected':''}>⚠️ 最需要跟進</option>
+        <option value="progress" ${_dashSort==='progress'?'selected':''}>↗ 進步最大</option>
+        <option value="practice" ${_dashSort==='practice'?'selected':''}>📉 練習最少</option>
+      </select>
     </div>
 
     <!-- 4 summary cards -->
@@ -2206,8 +2219,73 @@ function renderDashboard() {
   }
 
   // ===== Per-student cards =====
+  // Pre-compute a sort key per student and sort the array. Keeps the .map() template
+  // simple and avoids recomputing signals (trend, engagement, struggling) twice.
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const studentKeys = state.students.map(s => {
+    const p = state.progress[s.id] || {};
+    const allScores = p.scores || [];
+    const filteredScores = filterScores(allScores);
+    const attempts = filteredScores.length;
+    const allByWord = p.byWord || {};
+    const mastered = Object.values(allByWord).filter(w => w.bestScore >= 80).length;
+    const struggling = Object.values(allByWord).filter(w => w.attempts >= 2 && w.bestScore < 60).length;
+    // Trend: recent 5 vs prior 5
+    let trendDiff = 0;
+    if (allScores.length >= 6) {
+      const recent = allScores.slice(-5).map(x => x.score);
+      const prior = allScores.slice(-10, -5).map(x => x.score);
+      if (prior.length > 0) {
+        trendDiff = (recent.reduce((a, b) => a + b, 0) / recent.length) - (prior.reduce((a, b) => a + b, 0) / prior.length);
+      }
+    }
+    // Engagement signal: recent-week attempts vs class average
+    const recentWeekCount = allScores.filter(x => new Date(x.at) >= sevenDaysAgo).length;
+    // No-practice signal
+    const lastDate = p.lastSession ? new Date(p.lastSession) : null;
+    const daysSince = lastDate ? Math.floor((now - lastDate) / (24 * 60 * 60 * 1000)) : 999;
+    // Last 3 attempts
+    const last3 = allScores.slice(-3).map(x => x.score);
+    const recentStruggling = last3.length >= 3 && last3.every(x => x < 60);
+    // Compute sort key per mode
+    let key = 0;
+    if (_dashSort === 'followup') {
+      // Higher = more needs follow-up. Tie-break: name (stable).
+      key = (daysSince >= 3 ? 100 : 0)
+        + (recentStruggling ? 50 : 0)
+        + (recentWeekCount === 0 && allScores.length > 0 ? 80 : 0) // dropped off
+        + (recentWeekCount > 0 && recentWeekCount < 3 && allScores.length > recentWeekCount ? 30 : 0) // low engagement
+        + (struggling * 20)
+        - (mastered * 5);
+      // Invert mastered: more mastered = less needs follow-up
+      // We multiply by -1 when sorting so highest key comes first
+      key = -key; // (will be sorted DESC by sort comparator below)
+    } else if (_dashSort === 'progress') {
+      key = -trendDiff; // biggest gain first (invert so DESC sort)
+    } else if (_dashSort === 'practice') {
+      // Fewest attempts first. New students (0 attempts) at top.
+      key = attempts;
+    } else {
+      // 'default' = use the original index in state.students
+      key = state.students.indexOf(s);
+    }
+    return { s, key, attempts, mastered, struggling, daysSince, recentWeekCount, recentStruggling, trendDiff };
+  });
+  // Sort by key ascending (since we inverted followup/progress already)
+  if (_dashSort === 'followup') {
+    // key was inverted (most-needs-help = most negative). Sort ascending.
+    studentKeys.sort((a, b) => a.key - b.key);
+  } else if (_dashSort === 'progress') {
+    // key was inverted (biggest gain = most negative). Sort ascending.
+    studentKeys.sort((a, b) => a.key - b.key);
+  } else if (_dashSort === 'practice') {
+    studentKeys.sort((a, b) => a.key - b.key);
+  } // default: leave in state.students order
+  const sortedStudents = studentKeys.map(x => x.s);
+
   html += `<p style="font-weight:bold;color:#f59e0b;margin:18px 0 8px;font-size:1.1em;">👨‍🎓 學生進度</p>`;
-  html += state.students.map(s => {
+  html += sortedStudents.map(s => {
     const p = state.progress[s.id] || {};
     const filteredScores = filterScores(p.scores);
     const attempts = filteredScores.length;
@@ -2232,10 +2310,6 @@ function renderDashboard() {
       }
     }
     const trendColor = trendLabel.startsWith('↗') ? '#22c55e' : trendLabel.startsWith('↘') ? '#ef4444' : 'rgba(255,255,255,0.6)';
-    const sparkData = allScoresList.slice(-10).map(x => x.score);
-    const sparkSvg = sparkData.length > 1
-      ? _renderSparkline(sparkData, 100, 30)
-      : '<div style="color:rgba(255,255,255,0.4);font-size:0.8em;text-align:center;padding:8px 0;">— 無數據 —</div>';
     // Streak: consecutive days of practice ending today or yesterday
     const streak = _calcStreak(allScoresList);
     const streakBadge = streak >= 2
@@ -2249,13 +2323,13 @@ function renderDashboard() {
         ${streakBadge}
         <span style="color:${trendColor};font-size:1em;font-weight:bold;">${trendLabel}</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:0.9em;text-align:center;margin-bottom:8px;">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:0.9em;text-align:center;margin-bottom:6px;">
         <div style="background:rgba(34,197,94,0.2);padding:6px;border-radius:8px;">✅ ${mastered}</div>
         <div style="background:rgba(239,68,68,0.2);padding:6px;border-radius:8px;">⚠️ ${struggling}</div>
         <div style="background:rgba(245,158,11,0.2);padding:6px;border-radius:8px;">📊 ${avg}</div>
       </div>
-      <div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:4px;margin:6px 0;">
-        ${sparkSvg}
+      <div style="margin:6px 0;padding:0 2px;">
+        ${_renderSessionDots(allScoresList, 7)}
       </div>
       <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-top:6px;">最後練習：${lastSession}</div>
       <div style="display:flex;gap:6px;margin-top:8px;">
@@ -2432,6 +2506,31 @@ function _renderSparkline(data, width, height) {
     <polyline points="${points}" fill="none" stroke="${lastColor}" stroke-width="2"/>
     <circle cx="${((data.length-1)*stepX).toFixed(1)}" cy="${(height - ((last-min)/(max-min))*height).toFixed(1)}" r="3" fill="${lastColor}"/>
   </svg>`;
+}
+
+// Render a row of N colored dots, one per recent practice session.
+// Color: green ≥80 (mastered), amber 60-79 (practicing), red <60 (struggling), gray = no data.
+// `scores` is the student's full score history; we take the last N.
+function _renderSessionDots(scores, n) {
+  n = n || 7;
+  const recent = (scores || []).slice(-n);
+  // Pad with nulls on the LEFT so the rightmost dot is always the most recent
+  const padded = [];
+  for (let i = 0; i < n - recent.length; i++) padded.push(null);
+  for (const s of recent) padded.push(s);
+  const dots = padded.map((s, i) => {
+    if (s === null) {
+      return `<span title="第 ${i+1} 次：未有數據" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);margin:0 1px;vertical-align:middle;"></span>`;
+    }
+    const c = s.score >= 80 ? '#22c55e' : s.score >= 60 ? '#f59e0b' : '#ef4444';
+    const word = s.word || '';
+    const date = s.at ? new Date(s.at).toLocaleString('zh-HK', { month:'numeric', day:'numeric' }) : '';
+    return `<span title="第 ${i+1} 次：${word} ${s.score} 分（${date}）" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${c};box-shadow:0 0 0 1px rgba(0,0,0,0.3) inset;margin:0 1px;vertical-align:middle;"></span>`;
+  }).join('');
+  return `<div style="display:flex;align-items:center;gap:6px;font-size:0.8em;color:rgba(255,255,255,0.5);">
+    <span style="flex-shrink:0;">近 ${n} 次：</span>
+    <span style="flex:1;letter-spacing:0;line-height:1;">${dots}</span>
+  </div>`;
 }
 
 // ================== SVG VISUALIZATION UTILITIES ==================
