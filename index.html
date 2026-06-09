@@ -1686,7 +1686,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.2';
+const _DEMO_SEED_VERSION = 'v1.1.3';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
@@ -1726,15 +1726,18 @@ function _seedDemoProgress() {
 
   // Per-student profile: avg base, variance, attempt count, mastery level
   // Higher mastery = more words touched, higher bestScore
+  // recentRatio = fraction of attempts that should land in the last 7 days
+  // recentStreak = force this many consecutive recent days to each have ≥1 attempt (for 🔥 badge)
+  // lowEngagement = student who falls behind (trigger engagement alert)
   const profileById = {
-    's_demo':  { avgBase: 68, variance: 22, attempts: 32, mastery: 0.55 },
-    's_sarah': { avgBase: 88, variance: 8,  attempts: 46, mastery: 0.85 },
-    's_tommy': { avgBase: 48, variance: 24, attempts: 24, mastery: 0.40 },
-    's_amy':   { avgBase: 74, variance: 14, attempts: 38, mastery: 0.70 },
+    's_demo':  { avgBase: 68, variance: 22, attempts: 32, mastery: 0.55, recentRatio: 0.55, recentStreak: 2 },
+    's_sarah': { avgBase: 88, variance: 8,  attempts: 46, mastery: 0.85, recentRatio: 0.70, recentStreak: 5 },
+    's_tommy': { avgBase: 48, variance: 24, attempts: 24, mastery: 0.40, recentRatio: 0.12, lowEngagement: true },
+    's_amy':   { avgBase: 74, variance: 14, attempts: 38, mastery: 0.70, recentRatio: 0.60, recentStreak: 3 },
   };
 
   state.students.forEach((s) => {
-    const prof = profileById[s.id] || { avgBase: 65, variance: 18, attempts: 28, mastery: 0.55 };
+    const prof = profileById[s.id] || { avgBase: 65, variance: 18, attempts: 28, mastery: 0.55, recentRatio: 0.50 };
     const prog = { byWord: {}, totalAttempts: 0, lastSession: null, scores: [] };
 
     // Which words this student will touch — mastery % of total vocab
@@ -1747,10 +1750,42 @@ function _seedDemoProgress() {
       for (let i = 0; i < 3; i++) targetWords.push(state.words[i]);
     }
 
+    // For low-engagement students, force total attempts to be lower OR biased far back
+    // so recent week has very few — triggers the new engagement alert
+    if (prof.lowEngagement) {
+      prof.attempts = Math.max(8, Math.floor(prof.attempts * 0.6));
+    }
+
+    // Force recentStreak: pre-place one attempt per day for the last N days (today, yesterday, ...)
+    // so the streak counter visibly fires.
+    if (prof.recentStreak) {
+      for (let d = 0; d < prof.recentStreak; d++) {
+        const ts = now - d * day - Math.floor(Math.random() * day * 0.5);
+        const w = targetWords[Math.floor(Math.random() * targetWords.length)];
+        const learningBoost = Math.max(0, (14 - d) * 0.6);
+        const jitter = (Math.random() - 0.5) * prof.variance;
+        const score = Math.max(20, Math.min(99, Math.round(prof.avgBase + learningBoost + jitter)));
+        const at = new Date(ts).toISOString();
+        prog.scores.push({ word: w.char, score, at });
+        const key = w.char;
+        if (!prog.byWord[key]) prog.byWord[key] = { bestScore: 0, attempts: 0, lastAt: null };
+        if (score > prog.byWord[key].bestScore) prog.byWord[key].bestScore = score;
+        prog.byWord[key].attempts += 1;
+        if (!prog.byWord[key].lastAt || at > prog.byWord[key].lastAt) prog.byWord[key].lastAt = at;
+      }
+    }
+
     for (let i = 0; i < prof.attempts; i++) {
-      // Cluster attempts toward recent days (skewed random)
-      const daysAgoRaw = Math.pow(Math.random(), 1.4) * 14;
-      const daysAgo = Math.floor(daysAgoRaw);
+      // Cluster attempts toward recent days (skewed random) — but weight by recentRatio
+      // recentRatio: high = bias toward last 7 days, low = bias toward older 7 days
+      let daysAgo;
+      if (Math.random() < prof.recentRatio) {
+        // 0–7 days ago
+        daysAgo = Math.floor(Math.random() * 8);
+      } else {
+        // 8–14 days ago
+        daysAgo = 8 + Math.floor(Math.random() * 7);
+      }
       const ts = now - daysAgo * day - Math.floor(Math.random() * day);
 
       // Pick a word (with mild recency bias — repeated practice on same word)
@@ -1983,6 +2018,9 @@ function _switchStudent(studentId) {
 // ================== DASHBOARD ==================
 // Time period filter for dashboard
 let _dashFilter = 'all'; // 'all' | 'week' | 'month'
+// Word drill-down: when set, dashboard shows an inline panel listing students
+// struggling with this word. Cleared by closing the panel.
+let _drillDownWord = null;
 
 function renderDashboard() {
   // Ensure fresh state from localStorage (in case stale)
@@ -2127,9 +2165,14 @@ function renderDashboard() {
       label: w.word, value: w.avg, count: w.count
     }));
     html += `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:14px;">
-      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🎯 全班難點 Top 5</p>
-      ${_renderBarChart(barItems, 100)}
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:4px;">🎯 全班難點 Top 5 <span style="font-weight:normal;font-size:0.75em;color:rgba(255,255,255,0.5);">（點詞可睇邊個學生掂緊）</span></p>
+      ${_renderBarChart(barItems, 100, '_openWordDrillDown')}
     </div>`;
+  }
+
+  // ===== Word drill-down panel (shown when teacher clicks a weak-spot word) =====
+  if (_drillDownWord) {
+    html += _renderWordDrillDownPanel(_drillDownWord);
   }
 
   // ===== Actionable alerts =====
@@ -2193,11 +2236,17 @@ function renderDashboard() {
     const sparkSvg = sparkData.length > 1
       ? _renderSparkline(sparkData, 100, 30)
       : '<div style="color:rgba(255,255,255,0.4);font-size:0.8em;text-align:center;padding:8px 0;">— 無數據 —</div>';
+    // Streak: consecutive days of practice ending today or yesterday
+    const streak = _calcStreak(allScoresList);
+    const streakBadge = streak >= 2
+      ? `<span title="連續 ${streak} 日練習" style="background:linear-gradient(135deg,rgba(239,68,68,0.3),rgba(245,158,11,0.3));padding:2px 8px;border-radius:12px;font-size:0.85em;font-weight:bold;border:1px solid rgba(239,68,68,0.4);">🔥${streak}</span>`
+      : '';
     return `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:10px 0;border-left:6px solid ${s.color || '#f59e0b'};">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
         <span style="font-size:1.8em;">${s.avatar || '🌟'}</span>
         <span style="font-weight:bold;font-size:1.2em;flex:1;">${s.name}</span>
         <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${attempts} 次</span>
+        ${streakBadge}
         <span style="color:${trendColor};font-size:1em;font-weight:bold;">${trendLabel}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;font-size:0.9em;text-align:center;margin-bottom:8px;">
@@ -2232,10 +2281,83 @@ function renderDashboard() {
   container.innerHTML = html;
 }
 
+// ================== WORD DRILL-DOWN ==================
+// Teacher clicks a weak-spot word in the bar chart → this panel shows
+// which students are struggling with that specific word, with a quick link
+// into each student's detail view (with the word pre-highlighted).
+function _openWordDrillDown(word) {
+  _drillDownWord = word;
+  renderDashboard();
+  // Scroll the panel into view (it renders right after the bar chart)
+  setTimeout(() => {
+    const el = document.getElementById('wordDrillDownPanel');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, 50);
+}
+
+function _closeWordDrillDown() {
+  _drillDownWord = null;
+  renderDashboard();
+}
+
+// Build the inline drill-down panel HTML.
+// Shows: students whose bestScore on this word is < 70 (struggling or practicing).
+// Sorted worst-first so the most-needs-help student is on top.
+function _renderWordDrillDownPanel(word) {
+  // Collect per-student best score for this word
+  const rows = state.students.map(s => {
+    const p = state.progress[s.id] || {};
+    const byWord = p.byWord || {};
+    const info = byWord[word];
+    return {
+      s,
+      bestScore: info ? info.bestScore : null,
+      attempts: info ? info.attempts : 0,
+      lastTry: info ? info.lastTry : null
+    };
+  });
+  // Split: struggling (has tried, < 70), practicing (>= 70), untouched
+  const struggling = rows.filter(r => r.bestScore !== null && r.bestScore < 70)
+    .sort((a, b) => a.bestScore - b.bestScore);
+  const mastered = rows.filter(r => r.bestScore !== null && r.bestScore >= 70);
+  const untouched = rows.filter(r => r.bestScore === null);
+
+  const renderRow = (r, label, color) => {
+    const isStruggling = r.bestScore !== null && r.bestScore < 70;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;margin:4px 0;border-left:3px solid ${color};">
+      <span style="font-size:1.3em;">${r.s.avatar || '🌟'}</span>
+      <span style="flex:1;font-weight:bold;">${r.s.name}</span>
+      <span style="font-size:0.85em;color:rgba(255,255,255,0.7);">${label}</span>
+      <button onclick="showStudentDetail('${r.s.id}','${word.replace(/'/g, "\\'")}')" style="background:#0ea5e9;font-size:0.85em;padding:6px 10px;min-height:36px;">查看 →</button>
+    </div>`;
+  };
+
+  return `<div id="wordDrillDownPanel" style="background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(239,68,68,0.15));border:2px solid rgba(245,158,11,0.4);border-radius:12px;padding:14px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+      <span style="font-size:1.5em;">🔍</span>
+      <span style="font-weight:bold;color:#f59e0b;font-size:1.1em;flex:1;">「${word}」 — 邊啲學生掂緊？</span>
+      <button onclick="_closeWordDrillDown()" style="background:rgba(255,255,255,0.15);font-size:0.85em;padding:4px 10px;min-height:32px;">✕ 關閉</button>
+    </div>
+    ${struggling.length > 0
+      ? `<p style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-bottom:6px;">⚠️ 掂緊緊（最高分 &lt; 70）— ${struggling.length} 人</p>
+         ${struggling.map(r => renderRow(r, `${r.attempts} 次 • 最高 ${r.bestScore} 分`, '#ef4444')).join('')}`
+      : ''}
+    ${mastered.length > 0
+      ? `<p style="font-size:0.85em;color:rgba(255,255,255,0.6);margin:10px 0 6px;">✅ 已掌握（最高分 ≥ 70）— ${mastered.length} 人</p>
+         ${mastered.map(r => renderRow(r, `${r.attempts} 次 • 最高 ${r.bestScore} 分`, '#22c55e')).join('')}`
+      : ''}
+    ${untouched.length > 0
+      ? `<p style="font-size:0.85em;color:rgba(255,255,255,0.5);margin:10px 0 6px;">未接觸 — ${untouched.length} 人</p>
+         ${untouched.map(r => renderRow(r, '未試過', 'rgba(255,255,255,0.2)')).join('')}`
+      : ''}
+  </div>`;
+}
+
 // Build actionable alerts (3-day no practice, struggling streak, etc.)
 function _buildAlerts(allScores) {
   const alerts = [];
   const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   state.students.forEach(s => {
     const p = state.progress[s.id] || {};
     const scores = p.scores || [];
@@ -2254,6 +2376,28 @@ function _buildAlerts(allScores) {
       alerts.push(`${s.avatar} <b>${s.name}</b>：最近 3 次都 &lt; 60 分`);
     }
   });
+  // Alert 4: low engagement — student practicing much less than class avg (last 7 days)
+  // Only meaningful when the class has at least 2 active students in the last 7 days,
+  // and the low-engagement student has SOME history (otherwise it's a fresh student, not a dip).
+  const weeklyCounts = state.students.map(s => {
+    const p = state.progress[s.id] || {};
+    const recent = (p.scores || []).filter(x => new Date(x.at) >= sevenDaysAgo);
+    return { s, recent: recent.length, total: (p.scores || []).length };
+  });
+  const activeThisWeek = weeklyCounts.filter(x => x.recent > 0);
+  if (activeThisWeek.length >= 2) {
+    const classAvg = activeThisWeek.reduce((sum, x) => sum + x.recent, 0) / activeThisWeek.length;
+    if (classAvg >= 2) {
+      weeklyCounts.forEach(({ s, recent, total }) => {
+        // Trigger: this student is at < 50% of class avg this week, AND has older history
+        // (so we know they used to practice — flags a real engagement dip, not a fresh start).
+        // recent=0 with total>0 means they totally dropped off this week — even stronger signal.
+        if (recent < classAvg * 0.5 && total > recent) {
+          alerts.push(`⚠️ <b>${s.name}</b>：本週只練 ${recent} 次（班平均 ${Math.round(classAvg)} 次）`);
+        }
+      });
+    }
+  }
   // Alert 3: words that 50%+ students score < 50
   const wordFail = {};
   state.students.forEach(s => {
@@ -2349,7 +2493,9 @@ function _renderWeekHeatmap(weeklyData) {
 }
 
 // Horizontal bar chart for weak spots
-function _renderBarChart(items, maxValue) {
+// If `clickFnName` is provided (string, name of a global function), each row is clickable
+// and invokes `clickFnName(encodedLabel)` on click. Used for word → student drill-down.
+function _renderBarChart(items, maxValue, clickFnName) {
   // items = [{label, value, count}]
   maxValue = maxValue || 100;
   const rowH = 26, gap = 8, labelW = 70, countW = 60, barAreaW = 160;
@@ -2360,12 +2506,19 @@ function _renderBarChart(items, maxValue) {
     const y = i * (rowH + gap);
     const pct = (item.value / maxValue) * 100;
     const barColor = item.value < 50 ? '#ef4444' : item.value < 70 ? '#f59e0b' : '#22c55e';
-    html += `<text x="0" y="${y + rowH/2 + 4}" font-size="12" fill="rgba(255,255,255,0.9)" font-weight="bold">${item.label}</text>`;
-    html += `<rect x="${labelW}" y="${y + 4}" width="${barAreaW}" height="${rowH - 8}" rx="4" fill="rgba(0,0,0,0.3)"/>`;
-    html += `<rect x="${labelW}" y="${y + 4}" width="${barAreaW * pct / 100}" height="${rowH - 8}" rx="4" fill="${barColor}"/>`;
-    html += `<text x="${labelW + barAreaW * pct / 100 + 4}" y="${y + rowH/2 + 4}" font-size="11" fill="#fff" font-weight="bold">${item.value}${item.suffix || ''}</text>`;
-    if (item.count !== undefined) {
-      html += `<text x="${labelW + barAreaW + 8}" y="${y + rowH/2 + 4}" font-size="10" fill="rgba(255,255,255,0.5)">${item.count}次</text>`;
+    const rowInner = `
+      <text x="0" y="${y + rowH/2 + 4}" font-size="12" fill="rgba(255,255,255,0.9)" font-weight="bold">${item.label}</text>
+      <rect x="${labelW}" y="${y + 4}" width="${barAreaW}" height="${rowH - 8}" rx="4" fill="rgba(0,0,0,0.3)"/>
+      <rect x="${labelW}" y="${y + 4}" width="${barAreaW * pct / 100}" height="${rowH - 8}" rx="4" fill="${barColor}"/>
+      <text x="${labelW + barAreaW * pct / 100 + 4}" y="${y + rowH/2 + 4}" font-size="11" fill="#fff" font-weight="bold">${item.value}${item.suffix || ''}</text>
+      ${item.count !== undefined ? `<text x="${labelW + barAreaW + 8}" y="${y + rowH/2 + 4}" font-size="10" fill="rgba(255,255,255,0.5)">${item.count}次</text>` : ''}
+    `;
+    if (clickFnName) {
+      // Escape quotes/backslash/newlines for safe injection into onclick attribute
+      const safe = String(item.label).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
+      html += `<g onclick="${clickFnName}('${safe}')" style="cursor:pointer;">${rowInner}</g>`;
+    } else {
+      html += rowInner;
     }
   });
   html += '</svg>';
@@ -2574,11 +2727,23 @@ function _computeClassWeakSpots(scores) {
     .sort((a, b) => a.avg - b.avg);
 }
 
-function showStudentDetail(studentId) {
+function showStudentDetail(studentId, focusWord) {
   const s = state.students.find(x => x.id === studentId);
   if (!s) return;
   const p = state.progress[studentId] || { byWord: {}, scores: [] };
   const words = Object.entries(p.byWord || {}).sort((a, b) => b[1].attempts - a[1].attempts);
+  // If a focusWord is provided, lift it to the top of the list (whether or not the student
+  // has any history for it). When lifted, give it a yellow ring so the teacher sees why it's there.
+  if (focusWord) {
+    const idx = words.findIndex(([w]) => w === focusWord);
+    if (idx >= 0) {
+      const [w, info] = words.splice(idx, 1)[0];
+      words.unshift([w, info]);
+    } else {
+      // Word has no history for this student — show a "未試過" entry at the top
+      words.unshift([focusWord, { bestScore: null, attempts: 0, lastTry: null }]);
+    }
+  }
   let html = `<div style="max-width:700px;margin:0 auto;">
     <h2 style="color:#f59e0b;">${s.avatar || '🌟'} ${s.name} 練習記錄</h2>
     <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:10px 0;">
@@ -2593,18 +2758,24 @@ function showStudentDetail(studentId) {
     html += '<p style="color:rgba(255,255,255,0.6);">尚未有練習記錄</p>';
   } else {
     words.forEach(([word, data]) => {
-      const status = data.bestScore >= 80 ? '✅' : data.bestScore >= 60 ? '👍' : '⚠️';
+      const isFocus = focusWord && word === focusWord;
+      const status = data.bestScore === null ? '❔' : data.bestScore >= 80 ? '✅' : data.bestScore >= 60 ? '👍' : '⚠️';
       const lastTry = data.lastTry ? new Date(data.lastTry).toLocaleString('zh-HK', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' }) : '';
       const scoreTrend = (data.history || []).slice(-5).map(h => h.score);
       const miniBar = scoreTrend.map(sc => {
         const c = sc >= 80 ? '#22c55e' : sc >= 60 ? '#f59e0b' : '#ef4444';
         return `<div style="display:inline-block;width:6px;height:${Math.max(4, sc/3)}px;background:${c};margin-right:2px;border-radius:2px;vertical-align:bottom;" title="${sc}分"></div>`;
       }).join('');
-      html += `<div style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;margin:6px 0;">
+      const focusStyle = isFocus ? 'border:2px solid #f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,0.25);' : '';
+      const focusBadge = isFocus ? `<span style="background:#f59e0b;color:#000;padding:2px 8px;border-radius:8px;font-size:0.75em;font-weight:bold;margin-left:6px;">📍 從全班難點跳嚟</span>` : '';
+      const detailLine = data.bestScore === null
+        ? '未試過呢個詞'
+        : `${data.attempts} 次嘗試 • 最高 ${data.bestScore} 分 • ${lastTry}`;
+      html += `<div id="${isFocus ? 'wordDrillDownFocus' : ''}" style="display:flex;align-items:center;gap:10px;padding:10px;background:rgba(255,255,255,0.05);border-radius:8px;margin:6px 0;${focusStyle}">
         <span style="font-size:1.5em;">${status}</span>
         <div style="flex:1;">
-          <div style="font-weight:bold;font-size:1.1em;">${word}</div>
-          <div style="font-size:0.85em;color:rgba(255,255,255,0.6);">${data.attempts} 次嘗試 • 最高 ${data.bestScore} 分 • ${lastTry}</div>
+          <div style="font-weight:bold;font-size:1.1em;">${word}${focusBadge}</div>
+          <div style="font-size:0.85em;color:rgba(255,255,255,0.6);">${detailLine}</div>
           <div style="margin-top:4px;display:flex;align-items:flex-end;height:36px;">${miniBar}</div>
         </div>
       </div>`;
@@ -2617,6 +2788,13 @@ function showStudentDetail(studentId) {
     </div>
   </div>`;
   document.getElementById('dashboardContent').innerHTML = html;
+  // If a focusWord was passed, scroll to the highlighted row
+  if (focusWord) {
+    setTimeout(() => {
+      const focusEl = document.getElementById('wordDrillDownFocus');
+      if (focusEl) focusEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 50);
+  }
 }
 
 // ================== PDF REPORT EXPORT ==================
