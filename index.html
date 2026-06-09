@@ -186,14 +186,35 @@ function updateHubStatus() {
 
 function initVocab() {
   const grid = document.getElementById('vocabGrid');
-  grid.innerHTML = state.words.map((w, i) => `
+  // group by category for teacher choice + images
+  const imgMap = {
+    '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
+    '季節':'gwai-jit.png','北風':'bak-fung.png','雪花':'suet-fa.png','黃葉':'wong-yip.png',
+    '蝴蝶':'woo-dip.png','游泳':'yau-wing.png','燒烤':'siu-fu.png','野餐':'ye-chan.png','火鍋':'fo-wo.png',
+    '滴滴答答':'dik-dik.png','嘩啦嘩啦':'wa-la.png','叮叮咚咚':'ding-ding.png','轟隆轟隆':'hung-lung.png','呼呼':'fu-fu.png'
+  };
+  const cats = {};
+  state.words.forEach((w, i) => {
+    if (!cats[w.category]) cats[w.category] = [];
+    cats[w.category].push({w, i});
+  });
+  let html = '';
+  Object.keys(cats).forEach(cat => {
+    html += `<div style="grid-column:1/-1;margin:10px 0 5px;font-weight:bold;color:#f59e0b;">${cat}</div>`;
+    cats[cat].forEach(({w, i}) => {
+      const img = imgMap[w.char] ? `<img src="assets/images/${imgMap[w.char]}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;">` : '';
+      html += `
     <div class="vocab-card" onclick="practiceWord(${i})">
+      ${img}
       <div class="vocab-char">${w.char}</div>
       <div class="vocab-pinyin">${w.pinyin}</div>
       <div style="color:#666;font-size:1.1em;">${w.meaning}</div>
+      <div style="font-size:0.8em;color:#7c3aed;margin-top:4px;">[${w.category}]</div>
       <button onclick="event.stopImmediatePropagation();speak('${w.char}');" style="margin-top:16px;background:#7c3aed;">🔊 聽發音</button>
-    </div>
-  `).join('');
+    </div>`;
+    });
+  });
+  grid.innerHTML = html;
   state.completed.vocab = true;
   updateHubStatus();
 }
@@ -219,8 +240,16 @@ function renderAssessment() {
   }
   const w = state.words[state.assessmentIndex];
   state.currentWord = w;
+  const imgMap = {
+    '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
+    '季節':'gwai-jit.png','北風':'bak-fung.png','雪花':'suet-fa.png','黃葉':'wong-yip.png',
+    '蝴蝶':'woo-dip.png','游泳':'yau-wing.png','燒烤':'siu-fu.png','野餐':'ye-chan.png','火鍋':'fo-wo.png',
+    '滴滴答答':'dik-dik.png','嘩啦嘩啦':'wa-la.png','叮叮咚咚':'ding-ding.png','轟隆轟隆':'hung-lung.png','呼呼':'fu-fu.png'
+  };
+  const img = imgMap[w.char] ? `<img src="assets/images/${imgMap[w.char]}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
   container.innerHTML = `
     <div class="vocab-card" style="margin-bottom:30px;">
+      ${img}
       <div class="vocab-char">${w.char}</div>
       <div class="vocab-pinyin">${w.pinyin}</div>
       <div style="margin:12px 0;color:#666;">${w.meaning}</div>
