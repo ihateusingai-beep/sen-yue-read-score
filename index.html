@@ -2120,7 +2120,7 @@ function renderDashboard() {
   }
 
   // ===== Class-wide weak spots Top 5 =====
-  const wordDifficulty = _computeClassWeakSpots(filterScores);
+  const wordDifficulty = _computeClassWeakSpots(allScores);
   if (wordDifficulty.length > 0) {
     const barItems = wordDifficulty.slice(0, 5).map(([word, info]) => ({
       label: word, value: info.avg, count: info.count
@@ -2558,7 +2558,9 @@ function _calcStreak(scores) {
 
 // Compute class-wide weak spots (words with lowest avg score across all students)
 function _computeClassWeakSpots(scores) {
-  if (!scores || scores.length === 0) return [];
+  // Defensive: scores MUST be an array. If a function slips through (e.g. forgot to call it),
+  // bail out instead of crashing the whole dashboard.
+  if (!Array.isArray(scores) || scores.length === 0) return [];
   const byWord = {};
   scores.forEach(s => {
     if (!byWord[s.word]) byWord[s.word] = { sum: 0, count: 0 };
