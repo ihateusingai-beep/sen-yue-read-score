@@ -6,7 +6,7 @@
       "id": "season",
       "label": "自然季節",
       "description": "四季變化、天氣現象相關詞彙",
-      "enabled": false,
+      "enabled": true,
       "words": [
         { "char": "春天", "pinyin": "cheun tin", "meaning": "春季，四季之一", "target": "春天", "image": "chun-tin.png" },
         { "char": "夏天", "pinyin": "ha tin", "meaning": "夏季，天氣炎熱", "target": "夏天", "image": "ha-tin.png" },
@@ -22,7 +22,7 @@
       "id": "activity",
       "label": "戶外活動",
       "description": "四季戶外活動相關詞彙",
-      "enabled": false,
+      "enabled": true,
       "words": [
         { "char": "蝴蝶", "pinyin": "woo dip", "meaning": "美麗的飛蟲，常在春天出現", "target": "蝴蝶", "image": "woo-dip.png" },
         { "char": "游泳", "pinyin": "yau wing", "meaning": "在水中的活動，夏日消暑", "target": "游泳", "image": "yau-wing.png" },
@@ -35,7 +35,7 @@
       "id": "sound",
       "label": "聲音世界",
       "description": "粵語擬聲詞，模擬自然和生活聲音",
-      "enabled": false,
+      "enabled": true,
       "words": [
         { "char": "滴滴答答", "pinyin": "dik dik daap daap", "meaning": "雨聲或時鐘聲", "target": "滴滴答答", "image": "dik-dik.png" },
         { "char": "嘩啦嘩啦", "pinyin": "wa la wa la", "meaning": "水流聲或大雨聲", "target": "嘩啦嘩啦", "image": "wa-la.png" },
