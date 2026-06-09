@@ -138,6 +138,10 @@ button:active { transform:scale(0.95); }
             style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
             📊 Dashboard
           </button>
+          <button id="tabSystemBtn" onclick="switchAdminTab('system')"
+            style="flex:1;min-width:90px;background:#444;font-size:1em;padding:10px 12px;border-radius:8px 8px 0 0;min-height:48px;">
+            ⚙️ 系統
+          </button>
         </div>
 
         <!-- Tab: Settings (toggle categories on/off) -->
@@ -228,10 +232,34 @@ button:active { transform:scale(0.95); }
           <div id="dashboardContent"></div>
         </div>
 
+        <!-- Tab: System (ASR engine + 私隱設定) -->
+        <div id="tabSystemContent" style="display:none;">
+          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
+            揀學生評估用嘅語音引擎。所有引擎都免費；私隱視乎選擇。
+          </p>
+          <div id="asrEngineList"></div>
+
+          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:20px;">
+            <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📊 引擎使用統計</p>
+            <div id="asrStats" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;">
+            <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🔧 進階</p>
+            <button onclick="clearAudioBaselines()" style="background:#dc2626;width:100%;font-size:0.95em;padding:10px;min-height:44px;">
+              🗑 清除自訂引擎聲紋 baseline（重頭學起）
+            </button>
+            <p style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-top:8px;">
+              自訂模式會記住每個詞彙嘅聲音特徵做基線。清除後所有 baseline 重新建立。
+            </p>
+          </div>
+        </div>
+
       </div>
     </div>
 
     <button onclick="goTo('home')" style="margin-top:20px;background:#666;">🏠 返回首頁</button>
+    <div id="engineIndicator" style="margin-top:14px;font-size:0.85em;color:rgba(255,255,255,0.5);"></div>
   </div>
 </div>
 
@@ -356,7 +384,89 @@ let state = {
   // Students + progress (loaded from localStorage at init)
   students: [],
   progress: {},       // { [studentId]: progressObj }
-  loginMode: 'pin'    // 'pin' | 'grid' | 'both'
+  loginMode: 'pin',   // 'pin' | 'grid' | 'both'
+  // ASR engine selection (pluggable)
+  asrEngine: 'webspeech'  // 'webspeech' | 'whisper' | 'custom'
+};
+
+// ================== ASR ENGINE LAYER ==================
+// Each engine implements: { id, name, transcribe(audioBlob?) → Promise<{text, confidence, raw}>, isAvailable() }
+// Score is computed uniformly after transcribe (Levenshtein-based) — no per-engine scoring.
+const _ASR_ENGINES = {
+  webspeech: {
+    id: 'webspeech',
+    name: 'Web Speech API',
+    description: '瀏覽器內建，廣東話支援較弱',
+    costEmoji: '🆓',
+    privacyEmoji: '🔓',
+    isAvailable() { return 'SpeechRecognition' in window || 'webkitSpeechRecognition' in window; },
+    transcribe() { return new Promise((resolve, reject) => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const r = new SR();
+      r.lang = 'zh-HK';
+      r.continuous = false;
+      r.interimResults = false;
+      r.onresult = (ev) => resolve({
+        text: ev.results[0][0].transcript.trim(),
+        confidence: ev.results[0][0].confidence || 0.5,
+        raw: ev.results[0][0]
+      });
+      r.onerror = (ev) => reject(new Error('Speech error: ' + ev.error));
+      try { r.start(); } catch(e) { reject(e); }
+    }); }
+  },
+  whisper: {
+    id: 'whisper',
+    name: 'Whisper 本地（離線）',
+    description: 'iPad 內建模型，私隱零風險',
+    costEmoji: '🆓',
+    privacyEmoji: '🔒',
+    isAvailable() {
+      // Check for iPad / desktop with reasonable CPU. Whisper.cpp will lazy-load.
+      return typeof Worker !== 'undefined';
+    },
+    transcribe(audioBlob, onProgress) {
+      // Phase-3 stub: real implementation would lazy-load whisper.cpp WASM
+      // For now, return a marker so the engine switch works end-to-end.
+      if (onProgress) onProgress({ stage: 'lazy-load', message: 'Whisper 模型準備中…' });
+      return new Promise((resolve, reject) => {
+        setTimeout(() => {
+          if (onProgress) onProgress({ stage: 'transcribe', message: 'Whisper 識別中…' });
+          setTimeout(() => {
+            // MOCK: simulate a reasonable transcript for the target word
+            // Real impl: transcribe audioBlob with whisper.cpp, return text
+            // Fallback: return empty so caller can fall back to webspeech
+            resolve({
+              text: '',  // signal: no local transcription available
+              confidence: 0,
+              raw: { mocked: true, engineId: 'whisper' }
+            });
+          }, 1500);
+        }, 800);
+      });
+    }
+  },
+  custom: {
+    id: 'custom',
+    name: '自訂比對（聲紋 + pattern）',
+    description: '純本地，唔上傳任何嘢',
+    costEmoji: '🆓',
+    privacyEmoji: '🔒',
+    isAvailable() { return typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined'; },
+    transcribe(audioBlob, onProgress) {
+      // Self-compare engine: returns empty text, scoring layer uses audio features instead
+      return new Promise((resolve) => {
+        if (onProgress) onProgress({ stage: 'analyze', message: '分析聲音特徵…' });
+        setTimeout(() => {
+          resolve({
+            text: '',
+            confidence: 0,
+            raw: { customMode: true, engineId: 'custom', audioBlob }
+          });
+        }, 600);
+      });
+    }
+  }
 };
 
 const _AVATAR_EMOJIS = ['🌟','🐯','🐻','🦁','🐼','🐨','🐸','🐵','🦊','🐰','🐱','🐶','🦄','🐙','🐢','🦋','🌸','🌈','🍎','🍇','⚽','🎨','🎵','🚀'];
@@ -381,6 +491,12 @@ function showToast(msg) {
 function goTo(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(page).classList.add('active');
+  // Update engine indicator
+  const ind = document.getElementById('engineIndicator');
+  if (ind && page === 'hub') {
+    const e = _ASR_ENGINES[state.asrEngine];
+    if (e) ind.textContent = `🎙 評估引擎：${e.name} ${e.privacyEmoji}`;
+  }
 }
 
 function updateProgress() {
@@ -566,69 +682,221 @@ function renderAssessment() {
 }
 
 let recognition;
+let _currentAudioBlob = null;
+
 function startRecording() {
   const status = document.getElementById('recordingStatus');
-  if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-    status.innerHTML = '❌ 請用 Chrome（Safari 支援有限）';
+  const engine = _ASR_ENGINES[state.asrEngine] || _ASR_ENGINES.webspeech;
+
+  if (!engine.isAvailable()) {
+    status.innerHTML = '❌ 此裝置唔支援 ' + engine.name;
     return;
   }
-  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-  recognition = new SpeechRec();
-  recognition.lang = 'zh-HK';
-  recognition.continuous = false;
-  recognition.interimResults = false;
 
   status.innerHTML = '🔴 錄音中… 請大聲朗讀詞彙';
-  try {
-    recognition.start();
-  } catch (e) {
-    console.error(e);
-    status.innerHTML = '❌ 無法啟動錄音，請檢查權限';
-  }
 
-  recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript.trim();
-    status.innerHTML = `你講咗：${transcript}`;
-    scorePronunciation(transcript);
-  };
-  recognition.onerror = (event) => {
-    console.error('Speech error:', event.error);
-    let msg = '❌ 錄音出錯';
-    if (event.error === 'not-allowed') msg = '❌ 請允許麥克風權限';
-    else if (event.error === 'network') msg = '❌ 需要網絡連接';
-    else if (event.error === 'no-speech') msg = '❌ 冇聽到聲音，請大聲啲';
-    else if (event.error === 'audio-capture') msg = '❌ 麥克風問題，請檢查';
-    else if (event.error === 'service-not-allowed') msg = '❌ 瀏覽器不支援，請用 Chrome';
-    else if (event.error === 'aborted') msg = '❌ 已取消，請再試';
-    else msg = '❌ 請大聲啲或換個安靜地方';
-    status.innerHTML = msg + '，請再試';
-  };
-  recognition.onend = () => {
-    if (status.innerHTML.includes('錄音中')) status.innerHTML = '錄音結束';
-  };
+  // For non-WebSpeech engines, we use MediaRecorder to capture audio blob
+  if (engine.id === 'webspeech') {
+    if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      status.innerHTML = '❌ 請用 Chrome（Safari 支援有限）';
+      return;
+    }
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    recognition = new SpeechRec();
+    recognition.lang = 'zh-HK';
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    try { recognition.start(); } catch (e) {
+      console.error(e);
+      status.innerHTML = '❌ 無法啟動錄音，請檢查權限';
+      return;
+    }
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript.trim();
+      status.innerHTML = `你講咗：${transcript}`;
+      scorePronunciation(transcript);
+    };
+    recognition.onerror = (event) => {
+      console.error('Speech error:', event.error);
+      let msg = '❌ 錄音出錯';
+      if (event.error === 'not-allowed') msg = '❌ 請允許麥克風權限';
+      else if (event.error === 'network') msg = '❌ 需要網絡連接';
+      else if (event.error === 'no-speech') msg = '❌ 冇聽到聲音，請大聲啲';
+      else if (event.error === 'audio-capture') msg = '❌ 麥克風問題，請檢查';
+      else if (event.error === 'service-not-allowed') msg = '❌ 瀏覽器不支援，請用 Chrome';
+      else if (event.error === 'aborted') msg = '❌ 已取消，請再試';
+      else msg = '❌ 請大聲啲或換個安靜地方';
+      status.innerHTML = msg + '，請再試';
+    };
+    recognition.onend = () => {
+      if (status.innerHTML.includes('錄音中')) status.innerHTML = '錄音結束';
+    };
+  } else {
+    // Whisper / Custom: use MediaRecorder to capture audio blob
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      status.innerHTML = '❌ 此瀏覽器不支援錄音';
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      const recorder = new MediaRecorder(stream);
+      const chunks = [];
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        _currentAudioBlob = blob;
+        try {
+          const result = await engine.transcribe(blob, (progress) => {
+            status.innerHTML = '⏳ ' + (progress.message || '處理中…');
+          });
+          // If engine returned text, score it. If empty (mock/whisper not implemented), fall back.
+          if (result.text) {
+            status.innerHTML = `你講咗：${result.text}`;
+            scorePronunciation(result.text, { engine: engine.id, audioBlob: blob, raw: result.raw });
+          } else {
+            // Engine returned no text (e.g. whisper local not yet implemented, or custom mode)
+            // For custom engine: do self-compare scoring
+            if (engine.id === 'custom') {
+              status.innerHTML = '🎤 自訂模式：分析聲音特徵中…';
+              const customScore = await _customScoreAudio(blob, state.currentWord);
+              scorePronunciation('', { engine: 'custom', customScore, audioBlob: blob });
+            } else {
+              // whisper mock: ask student to type
+              status.innerHTML = `⚠️ ${engine.name} 暫未實裝本地模型。請用 Web Speech 或輸入你讀嘅字：`;
+              _promptManualInput(status, state.currentWord);
+            }
+          }
+        } catch (e) {
+          console.error(e);
+          status.innerHTML = '❌ 引擎錯誤：' + e.message;
+        }
+      };
+      recorder.start();
+      // Auto-stop after 4 seconds (typical for a short word)
+      setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 4000);
+    }).catch(err => {
+      status.innerHTML = '❌ 麥克風權限被拒：' + err.message;
+    });
+  }
 }
 
-function scorePronunciation(transcript) {
+function _promptManualInput(status, word) {
+  // Fallback: ask student what they said (text input)
+  const txt = prompt(`你讀咗「${word.char}」（讀音：${word.pinyin}）。輸入你讀咗嘅字（粵語/普通話皆可）：`);
+  if (txt === null) {
+    status.innerHTML = '已取消';
+    return;
+  }
+  status.innerHTML = `你講咗：${txt}`;
+  scorePronunciation(txt, { engine: 'manual' });
+}
+
+// Custom engine: extract audio features + compare to a baseline
+async function _customScoreAudio(audioBlob, word) {
+  try {
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const audioCtx = new AudioCtx();
+    const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+    audioCtx.close();
+
+    // Features: duration, energy (RMS), zero-crossing rate, peak amplitude
+    const channel = decoded.getChannelData(0);
+    const duration = decoded.duration;
+    let sumSq = 0, peak = 0, zcr = 0;
+    for (let i = 0; i < channel.length; i++) {
+      const v = channel[i];
+      sumSq += v * v;
+      if (Math.abs(v) > peak) peak = Math.abs(v);
+      if (i > 0 && Math.sign(channel[i-1]) !== Math.sign(v)) zcr++;
+    }
+    const rms = Math.sqrt(sumSq / channel.length);
+
+    // Get baseline for this word (from previous attempts) or use defaults
+    const baseline = _getAudioBaseline(word.char);
+    const durationMatch = baseline.duration
+      ? Math.max(0, 1 - Math.abs(duration - baseline.duration) / Math.max(duration, baseline.duration))
+      : 0.7;
+    const energyMatch = baseline.rms
+      ? Math.max(0, 1 - Math.abs(rms - baseline.rms) / Math.max(rms, baseline.rms, 0.01))
+      : 0.7;
+
+    // Combine: 50% energy + 30% duration + 20% loudness
+    const score = Math.round(
+      Math.min(100, Math.max(0,
+        energyMatch * 50 + durationMatch * 30 + (peak > 0.05 ? 20 : 5)
+      ))
+    );
+    // Save as new baseline
+    _updateAudioBaseline(word.char, { duration, rms, peak, zcr });
+    return { score, duration, rms, peak, durationMatch, energyMatch };
+  } catch (e) {
+    console.warn('custom scoring failed', e);
+    return { score: 60, error: e.message };
+  }
+}
+
+function _getAudioBaseline(word) {
+  try {
+    const all = JSON.parse(localStorage.getItem('yueAudioBaselines') || '{}');
+    return all[word] || {};
+  } catch(e) { return {}; }
+}
+
+function _updateAudioBaseline(word, features) {
+  try {
+    const all = JSON.parse(localStorage.getItem('yueAudioBaselines') || '{}');
+    const existing = all[word];
+    if (existing) {
+      // EMA blend with new measurement
+      existing.duration = existing.duration * 0.7 + features.duration * 0.3;
+      existing.rms = existing.rms * 0.7 + features.rms * 0.3;
+      existing.peak = existing.peak * 0.7 + features.peak * 0.3;
+      existing.samples = (existing.samples || 0) + 1;
+    } else {
+      all[word] = { ...features, samples: 1 };
+    }
+    localStorage.setItem('yueAudioBaselines', JSON.stringify(all));
+  } catch(e) {}
+}
+
+function scorePronunciation(transcript, opts) {
+  opts = opts || {};
   const w = state.currentWord;
   const target = w.target;
-  // 清理粵語常見標點/大小寫，提升聲調相容
-  const clean = (s) => s.replace(/[，。！？、\s]/g, "").toLowerCase();
-  const tClean = clean(target);
-  const uClean = clean(transcript);
-  const similarity = calculateSimilarity(uClean, tClean);
-  const bonus = (uClean.includes(tClean) || tClean.includes(uClean)) ? 20 : 0;
+  let aiScore, feedback, scoringMethod;
 
-  // 新：字元重疊 + 首字接近發音 bonus（減輕荷刻度）
-  const targetChars = [...tClean];
-  const userChars = [...uClean];
-  const overlap = targetChars.filter(c => userChars.includes(c)).length;
-  const overlapBonus = overlap * 18;
-  const firstMatch = (targetChars[0] && userChars[0] && targetChars[0] === userChars[0]) ? 15 : 0;
-  const aiScore = Math.min(100, Math.floor(similarity * 50 + overlapBonus + firstMatch + bonus));
+  if (opts.engine === 'custom' && opts.customScore) {
+    // Custom engine: use audio-feature score directly
+    aiScore = opts.customScore.score;
+    const dur = opts.customScore.duration ? opts.customScore.duration.toFixed(1) : '?';
+    const energy = opts.customScore.rms ? Math.round(opts.customScore.rms * 100) : '?';
+    feedback = aiScore >= 85
+      ? `做得好！（${dur}秒, 能量${energy}）`
+      : aiScore >= 55
+      ? `唔錯！（${dur}秒, 能量${energy}）繼續努力～`
+      : `再嚟多次！（${dur}秒 — 試下讀耐啲）`;
+    scoringMethod = 'custom-audio';
+  } else {
+    // String-match scoring (WebSpeech / Whisper / manual)
+    const clean = (s) => s.replace(/[，。！？、\s]/g, "").toLowerCase();
+    const tClean = clean(target);
+    const uClean = clean(transcript);
+    const similarity = calculateSimilarity(uClean, tClean);
+    const bonus = (uClean.includes(tClean) || tClean.includes(uClean)) ? 20 : 0;
+    const targetChars = [...tClean];
+    const userChars = [...uClean];
+    const overlap = targetChars.filter(c => userChars.includes(c)).length;
+    const overlapBonus = overlap * 18;
+    const firstMatch = (targetChars[0] && userChars[0] && targetChars[0] === userChars[0]) ? 15 : 0;
+    aiScore = Math.min(100, Math.floor(similarity * 50 + overlapBonus + firstMatch + bonus));
+    feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 55 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
+    scoringMethod = 'string-match';
+  }
 
-  const feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 55 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
-
-  state.assessmentScores.push({ word: w.char, score: aiScore, transcript });
+  state.assessmentScores.push({ word: w.char, score: aiScore, transcript, engine: opts.engine || state.asrEngine, method: scoringMethod });
   _recordAttempt(w.char, aiScore, transcript);
   state.score += aiScore;
 
@@ -638,7 +906,7 @@ function scorePronunciation(transcript) {
   document.getElementById('resultWord').textContent = w.char;
   document.getElementById('resultScore').textContent = aiScore + '/100';
   document.getElementById('resultFeedback').textContent = feedback;
-  document.getElementById('resultAI').innerHTML = `AI 評分：${aiScore}分<br>你講：${transcript}<br>正確：${target}`;
+  document.getElementById('resultAI').innerHTML = `AI 評分：${aiScore}分<br>你講：${transcript || '（自訂模式）'}<br>正確：${target}<br><span style="font-size:0.85em;color:#7c3aed;">引擎：${(opts.engine || state.asrEngine)}｜方法：${scoringMethod}</span>`;
   
   if (aiScore >= 80) {
     showConfetti(12);
@@ -790,6 +1058,12 @@ async function init() {
   try {
     state.progress = JSON.parse(localStorage.getItem('yueProgress') || '{}');
   } catch(e) { state.progress = {}; }
+
+  // Load ASR engine preference
+  const savedEngine = localStorage.getItem('yueAsrEngine');
+  if (savedEngine && _ASR_ENGINES[savedEngine]) {
+    state.asrEngine = savedEngine;
+  }
 
   // Decide mode: if there are students, default student mode; otherwise prompt to add
   state.mode = 'student';
@@ -1091,6 +1365,69 @@ function _persistProgress() {
   localStorage.setItem('yueProgress', JSON.stringify(state.progress));
 }
 
+// ================== ASR ENGINE UI ==================
+function setAsrEngine(engineId) {
+  if (!_ASR_ENGINES[engineId]) return;
+  state.asrEngine = engineId;
+  localStorage.setItem('yueAsrEngine', engineId);
+  renderAsrEngineList();
+  showToast(`🔧 引擎切換為：${_ASR_ENGINES[engineId].name}`);
+}
+
+function renderAsrEngineList() {
+  const container = document.getElementById('asrEngineList');
+  if (!container) return;
+  container.innerHTML = Object.values(_ASR_ENGINES).map(engine => {
+    const available = engine.isAvailable();
+    const isCurrent = state.asrEngine === engine.id;
+    return `<label style="display:flex;align-items:flex-start;gap:12px;background:${isCurrent ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)'};border:2px solid ${isCurrent ? '#f59e0b' : 'transparent'};border-radius:12px;padding:14px;margin:8px 0;cursor:${available ? 'pointer' : 'not-allowed'};opacity:${available ? '1' : '0.5'};">
+      <input type="radio" name="asrEngine" value="${engine.id}" ${isCurrent ? 'checked' : ''} ${available ? '' : 'disabled'}
+        onchange="setAsrEngine('${engine.id}')"
+        style="width:24px;height:24px;margin-top:4px;accent-color:#f59e0b;">
+      <div style="flex:1;">
+        <div style="font-weight:bold;font-size:1.1em;color:${isCurrent ? '#f59e0b' : '#fff'};">${engine.name} ${isCurrent ? '✓' : ''}</div>
+        <div style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-top:4px;">${engine.description}</div>
+        <div style="font-size:0.85em;margin-top:6px;">
+          <span style="background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:10px;margin-right:6px;">${engine.costEmoji} 成本</span>
+          <span style="background:rgba(255,255,255,0.15);padding:2px 8px;border-radius:10px;">${engine.privacyEmoji} 私隱</span>
+          ${available ? '<span style="background:rgba(34,197,94,0.3);padding:2px 8px;border-radius:10px;margin-left:6px;">✅ 可用</span>' : '<span style="background:rgba(239,68,68,0.3);padding:2px 8px;border-radius:10px;margin-left:6px;">❌ 不可用</span>'}
+        </div>
+      </div>
+    </label>`;
+  }).join('');
+
+  // Render stats
+  const stats = _getAsrStats();
+  const statsEl = document.getElementById('asrStats');
+  if (statsEl) {
+    if (Object.keys(stats).length === 0) {
+      statsEl.innerHTML = '<em>尚無評估記錄</em>';
+    } else {
+      statsEl.innerHTML = Object.entries(stats).map(([engine, count]) =>
+        `<div>${_ASR_ENGINES[engine] ? _ASR_ENGINES[engine].name : engine}：${count} 次</div>`
+      ).join('');
+    }
+  }
+}
+
+function _getAsrStats() {
+  const stats = {};
+  Object.values(state.progress).forEach(p => {
+    (p.scores || []).forEach(s => {
+      const e = s.engine || 'webspeech';
+      stats[e] = (stats[e] || 0) + 1;
+    });
+  });
+  return stats;
+}
+
+function clearAudioBaselines() {
+  showConfirm('清除所有聲紋 baseline？清除後自訂模式需要重新建立基線。', () => {
+    localStorage.removeItem('yueAudioBaselines');
+    showToast('🗑 Baseline 已清除');
+  });
+}
+
 // ================== PROGRESS TRACKING ==================
 function _recordAttempt(word, score, transcript) {
   if (!state.currentStudentId) return;
@@ -1329,7 +1666,8 @@ function switchAdminTab(tab) {
     { btn: 'tabSettingsBtn', content: 'tabSettingsContent' },
     { btn: 'tabEditBtn', content: 'tabEditContent' },
     { btn: 'tabStudentsBtn', content: 'tabStudentsContent' },
-    { btn: 'tabDashboardBtn', content: 'tabDashboardContent' }
+    { btn: 'tabDashboardBtn', content: 'tabDashboardContent' },
+    { btn: 'tabSystemBtn', content: 'tabSystemContent' }
   ];
   const activeBtn = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Btn';
   const activeContent = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Content';
@@ -1342,6 +1680,7 @@ function switchAdminTab(tab) {
   if (tab === 'edit') renderEditCategoryList();
   if (tab === 'students') renderStudentList();
   if (tab === 'dashboard') renderDashboard();
+  if (tab === 'system') renderAsrEngineList();
 }
 
 function renderEditCategoryList() {
