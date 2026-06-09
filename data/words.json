@@ -1,0 +1,48 @@
+{
+  "_comment": "詞彙數據庫 — 教師可直接編輯此檔案增減詞彙或分類",
+  "_teacher_guide": "每個 category 的 enabled: true/false 控制是否出現在學習和評估中",
+  "categories": [
+    {
+      "id": "season",
+      "label": "自然季節",
+      "description": "四季變化、天氣現象相關詞彙",
+      "enabled": false,
+      "words": [
+        { "char": "春天", "pinyin": "cheun tin", "meaning": "春季，四季之一", "target": "春天", "image": "chun-tin.png" },
+        { "char": "夏天", "pinyin": "ha tin", "meaning": "夏季，天氣炎熱", "target": "夏天", "image": "ha-tin.png" },
+        { "char": "秋天", "pinyin": "chau tin", "meaning": "秋季，天氣涼爽", "target": "秋天", "image": "chau-tin.png" },
+        { "char": "冬天", "pinyin": "dung tin", "meaning": "冬季，天氣寒冷", "target": "冬天", "image": "dung-tin.png" },
+        { "char": "季節", "pinyin": "gwai jit", "meaning": "四季的變化和循環", "target": "季節", "image": "gwai-jit.png" },
+        { "char": "北風", "pinyin": "bak fung", "meaning": "從北方吹來的風", "target": "北風", "image": "bak-fung.png" },
+        { "char": "雪花", "pinyin": "suet fa", "meaning": "冬天降下的雪", "target": "雪花", "image": "suet-fa.png" },
+        { "char": "黃葉", "pinyin": "wong yip", "meaning": "秋天落下的樹葉", "target": "黃葉", "image": "wong-yip.png" }
+      ]
+    },
+    {
+      "id": "activity",
+      "label": "戶外活動",
+      "description": "四季戶外活動相關詞彙",
+      "enabled": false,
+      "words": [
+        { "char": "蝴蝶", "pinyin": "woo dip", "meaning": "美麗的飛蟲，常在春天出現", "target": "蝴蝶", "image": "woo-dip.png" },
+        { "char": "游泳", "pinyin": "yau wing", "meaning": "在水中的活動，夏日消暑", "target": "游泳", "image": "yau-wing.png" },
+        { "char": "燒烤", "pinyin": "siu fu", "meaning": "戶外烤肉活動", "target": "燒烤", "image": "siu-fu.png" },
+        { "char": "火鍋", "pinyin": "fo wo", "meaning": "冬天熱辣辣的聚餐方式", "target": "火鍋", "image": "fo-wo.png" },
+        { "char": "野餐", "pinyin": "ye chan", "meaning": "戶外進食活動", "target": "野餐", "image": "ye-chan.png" }
+      ]
+    },
+    {
+      "id": "sound",
+      "label": "聲音世界",
+      "description": "粵語擬聲詞，模擬自然和生活聲音",
+      "enabled": false,
+      "words": [
+        { "char": "滴滴答答", "pinyin": "dik dik daap daap", "meaning": "雨聲或時鐘聲", "target": "滴滴答答", "image": "dik-dik.png" },
+        { "char": "嘩啦嘩啦", "pinyin": "wa la wa la", "meaning": "水流聲或大雨聲", "target": "嘩啦嘩啦", "image": "wa-la.png" },
+        { "char": "叮叮咚咚", "pinyin": "ding ding dung dung", "meaning": "演奏樂器的聲音", "target": "叮叮咚咚", "image": "ding-ding.png" },
+        { "char": "轟隆轟隆", "pinyin": "hung lung hung lung", "meaning": "火車行駛的聲音", "target": "轟隆轟隆", "image": "hung-lung.png" },
+        { "char": "呼呼", "pinyin": "fu fu", "meaning": "風吹過的聲音", "target": "呼呼", "image": "fu-fu.png" }
+      ]
+    }
+  ]
+}

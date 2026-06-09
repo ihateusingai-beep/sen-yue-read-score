@@ -70,7 +70,25 @@ button:active { transform:scale(0.95); }
         <div style="opacity:0.8;">歷史分數 + 錯題</div>
       </div>
     </div>
-    <button onclick="goTo('home')" style="margin-top:30px;background:#666;">🏠 返回首頁</button>
+
+    <!-- 老師設定面板（預設折疊） -->
+    <div style="max-width:800px;margin:30px auto;text-align:center;">
+      <button onclick="toggleAdminPanel()" id="adminToggleBtn"
+        style="background:#555;font-size:1.1em;padding:12px 28px;border-radius:12px;">
+        🔧 老師設定 <span id="adminArrow">▼</span>
+      </button>
+      <div id="adminPanel" style="display:none;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);border-radius:16px;margin-top:16px;padding:20px;text-align:left;max-width:600px;margin-left:auto;margin-right:auto;">
+        <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
+          開啟詞彙分類，學生學習和評估時只會出現已開啟的分類。
+        </p>
+        <div id="adminCategoryList"></div>
+        <button onclick="saveAdminSettings()" style="margin-top:16px;width:100%;background:#22c55e;font-size:1.1em;padding:14px;">
+          ✅ 儲存設定
+        </button>
+      </div>
+    </div>
+
+    <button onclick="goTo('home')" style="margin-top:20px;background:#666;">🏠 返回首頁</button>
   </div>
 </div>
 
@@ -111,32 +129,12 @@ let state = {
   score: 0,
   completed: { vocab: false, assessment: false },
   autoTTS: true,
-  words: [
-    // 季節
-    { char:'春天', pinyin:'cheun tin', meaning:'春季', target:'春天', category:'季節' },
-    { char:'夏天', pinyin:'ha tin', meaning:'夏季', target:'夏天', category:'季節' },
-    { char:'秋天', pinyin:'chau tin', meaning:'秋季', target:'秋天', category:'季節' },
-    { char:'冬天', pinyin:'dung tin', meaning:'冬季', target:'冬天', category:'季節' },
-    { char:'季節', pinyin:'gwai jit', meaning:'四季變化', target:'季節', category:'季節' },
-    { char:'北風', pinyin:'bak fung', meaning:'北方吹嚟嘅風', target:'北風', category:'季節' },
-    { char:'雪花', pinyin:'suet fa', meaning:'冬天嘅雪', target:'雪花', category:'季節' },
-    { char:'黃葉', pinyin:'wong yip', meaning:'秋天落葉', target:'黃葉', category:'季節' },
-    // 活動
-    { char:'蝴蝶', pinyin:'woo dip', meaning:'美麗嘅飛蟲', target:'蝴蝶', category:'活動' },
-    { char:'游泳', pinyin:'yau wing', meaning:'喺水度游', target:'游泳', category:'活動' },
-    { char:'燒烤', pinyin:'siu fu', meaning:'戶外烤肉', target:'燒烤', category:'活動' },
-    { char:'野餐', pinyin:'ye chan', meaning:'戶外食嘢', target:'野餐', category:'活動' },
-    { char:'火鍋', pinyin:'fo wo', meaning:'冬天熱辣辣', target:'火鍋', category:'活動' },
-    // 聲音
-    { char:'滴滴答答', pinyin:'dik dik daap daap', meaning:'雨聲/鐘聲', target:'滴滴答答', category:'聲音' },
-    { char:'嘩啦嘩啦', pinyin:'wa la wa la', meaning:'水流聲', target:'嘩啦嘩啦', category:'聲音' },
-    { char:'叮叮咚咚', pinyin:'ding ding dung dung', meaning:'演奏樂器', target:'叮叮咚咚', category:'聲音' },
-    { char:'轟隆轟隆', pinyin:'hung lung hung lung', meaning:'火車聲', target:'轟隆轟隆', category:'聲音' },
-    { char:'呼呼', pinyin:'fu fu', meaning:'風聲', target:'呼呼', category:'聲音' }
-  ],
+  // Loaded from data/words.json at runtime
+  categories: [],
+  words: [],           // flattened from enabled categories
   assessmentIndex: 0,
   assessmentScores: [],
-  selectedCategories: ['季節','活動','聲音']
+  selectedCategoryIds: []  // ids of enabled categories (from localStorage overrides)
 };
 
 function speak(text) {
@@ -192,30 +190,35 @@ function updateHubStatus() {
 
 function initVocab() {
   const grid = document.getElementById('vocabGrid');
-  // group by category for teacher choice + images
-  const imgMap = {
-    '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
-    '季節':'gwai-jit.png','北風':'bak-fung.png','雪花':'suet-fa.png','黃葉':'wong-yip.png',
-    '蝴蝶':'woo-dip.png','游泳':'yau-wing.png','燒烤':'siu-fu.png','野餐':'ye-chan.png','火鍋':'fo-wo.png',
-    '滴滴答答':'dik-dik.png','嘩啦嘩啦':'wa-la.png','叮叮咚咚':'ding-ding.png','轟隆轟隆':'hung-lung.png','呼呼':'fu-fu.png'
-  };
+  if (state.words.length === 0) {
+    grid.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.4em;">
+      尚未開啟任何詞彙分類<br>
+      <button onclick="toggleAdminPanel()" style="margin-top:20px;background:#555;font-size:1em;padding:14px 28px;">
+        🔧 老師設定
+      </button>
+    </div>`;
+    state.completed.vocab = true;
+    updateHubStatus();
+    return;
+  }
+  // group by category
   const cats = {};
   state.words.forEach((w, i) => {
-    if (!cats[w.category]) cats[w.category] = [];
-    cats[w.category].push({w, i});
+    const key = w.categoryLabel || w.category || '其他';
+    if (!cats[key]) cats[key] = [];
+    cats[key].push({ w, i });
   });
   let html = '';
-  Object.keys(cats).forEach(cat => {
-    html += `<div style="grid-column:1/-1;margin:10px 0 5px;font-weight:bold;color:#f59e0b;">${cat}</div>`;
-    cats[cat].forEach(({w, i}) => {
-      const img = imgMap[w.char] ? `<img src="assets/images/${imgMap[w.char]}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;">` : '';
+  Object.keys(cats).forEach(key => {
+    html += `<div style="grid-column:1/-1;margin:10px 0 5px;font-weight:bold;color:#f59e0b;">${key}</div>`;
+    cats[key].forEach(({ w, i }) => {
+      const img = w.image ? `<img src="assets/images/${w.image}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;">` : '';
       html += `
     <div class="vocab-card" onclick="practiceWord(${i})">
       ${img}
       <div class="vocab-char">${w.char}</div>
       <div class="vocab-pinyin">${w.pinyin}</div>
       <div style="color:#666;font-size:1.1em;">${w.meaning}</div>
-      <div style="font-size:0.8em;color:#7c3aed;margin-top:4px;">[${w.category}]</div>
       <button onclick="event.stopImmediatePropagation();speak('${w.char}');" style="margin-top:16px;background:#7c3aed;">🔊 聽發音</button>
     </div>`;
     });
@@ -239,16 +242,30 @@ function startAssessment() {
 
 function showCategorySelector() {
   const container = document.getElementById('assessmentContent');
-  const cats = ['季節','活動','聲音'];
-  if (!state.selectedCategories || !Array.isArray(state.selectedCategories) || state.selectedCategories.length === 0) {
-    state.selectedCategories = ['季節','活動','聲音'];
+  const cats = state.categories;
+  if (cats.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.3em;">
+      尚未開啟任何詞彙分類<br>請先到老師設定開啟分類
+      <button onclick="toggleAdminPanel()" style="margin-top:16px;background:#555;font-size:1em;padding:12px 24px;">🔧 老師設定</button>
+      <br><button onclick="goTo('hub')" style="margin-top:12px;background:#666;font-size:1em;padding:12px 24px;">返回</button>
+    </div>`;
+    goTo('assessment');
+    return;
+  }
+  // Default: all enabled cats selected
+  if (!state.selectedCategoryIds || state.selectedCategoryIds.length === 0) {
+    state.selectedCategoryIds = cats.filter(c => c.enabled).map(c => c.id);
   }
   let html = `<div style="max-width:600px;margin:0 auto;text-align:center;">
     <h3 style="color:#f59e0b;margin-bottom:20px;">選擇評估範疇（可多選）</h3>`;
   cats.forEach(cat => {
-    const checked = state.selectedCategories.includes(cat) ? 'checked' : '';
-    html += `<label style="display:block;margin:12px 0;font-size:1.4em;">
-      <input type="checkbox" ${checked} onchange="toggleCategory('${cat}', this.checked)" style="width:30px;height:30px;vertical-align:middle;"> ${cat}
+    const checked = state.selectedCategoryIds.includes(cat.id) ? 'checked' : '';
+    const wordCount = cat.words ? cat.words.length : 0;
+    html += `<label style="display:flex;align-items:center;gap:10px;margin:10px 0;font-size:1.3em;">
+      <input type="checkbox" ${checked} onchange="toggleCategory('${cat.id}', this.checked)" style="width:28px;height:28px;accent-color:#f59e0b;">
+      <span style="font-weight:bold;">${cat.label}</span>
+      <span style="color:rgba(255,255,255,0.6);font-size:0.9em;">${cat.description || ''}</span>
+      <span style="margin-left:auto;background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${wordCount}詞</span>
     </label>`;
   });
   html += `<button onclick="startFilteredAssessment()" style="margin-top:30px;width:80%;">開始評估 →</button>
@@ -258,18 +275,22 @@ function showCategorySelector() {
   goTo('assessment');
 }
 
-function toggleCategory(cat, checked) {
+function toggleCategory(catId, checked) {
   if (checked) {
-    if (!state.selectedCategories.includes(cat)) state.selectedCategories.push(cat);
+    if (!state.selectedCategoryIds.includes(catId)) state.selectedCategoryIds.push(catId);
   } else {
-    state.selectedCategories = state.selectedCategories.filter(c => c !== cat);
+    state.selectedCategoryIds = state.selectedCategoryIds.filter(id => id !== catId);
   }
 }
 
 function startFilteredAssessment() {
-  const filtered = state.words.filter(w => state.selectedCategories.includes(w.category));
-  if (filtered.length === 0) {
+  if (state.selectedCategoryIds.length === 0) {
     alert('請至少選擇一個範疇');
+    return;
+  }
+  const filtered = state.words.filter(w => state.selectedCategoryIds.includes(w.categoryId));
+  if (filtered.length === 0) {
+    alert('所選範疇暫無詞彙，請先到老師設定開啟分類');
     return;
   }
   state.filteredWords = filtered;
@@ -286,13 +307,7 @@ function renderFilteredAssessment() {
   }
   const w = state.filteredWords[state.assessmentIndex];
   state.currentWord = w;
-  const imgMap = {
-    '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
-    '季節':'gwai-jit.png','北風':'bak-fung.png','雪花':'suet-fa.png','黃葉':'wong-yip.png',
-    '蝴蝶':'woo-dip.png','游泳':'yau-wing.png','燒烤':'siu-fu.png','野餐':'ye-chan.png','火鍋':'fo-wo.png',
-    '滴滴答答':'dik-dik.png','嘩啦嘩啦':'wa-la.png','叮叮咚咚':'ding-ding.png','轟隆轟隆':'hung-lung.png','呼呼':'fu-fu.png'
-  };
-  const img = imgMap[w.char] ? `<img src="assets/images/${imgMap[w.char]}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
+  const img = w.image ? `<img src="assets/images/${w.image}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
   container.innerHTML = `
     <div class="vocab-card" style="margin-bottom:30px;">
       ${img}
@@ -315,13 +330,7 @@ function renderAssessment() {
   }
   const w = wordsToUse[state.assessmentIndex];
   state.currentWord = w;
-  const imgMap = {
-    '春天':'chun-tin.png','夏天':'ha-tin.png','秋天':'chau-tin.png','冬天':'dung-tin.png',
-    '季節':'gwai-jit.png','北風':'bak-fung.png','雪花':'suet-fa.png','黃葉':'wong-yip.png',
-    '蝴蝶':'woo-dip.png','游泳':'yau-wing.png','燒烤':'siu-fu.png','野餐':'ye-chan.png','火鍋':'fo-wo.png',
-    '滴滴答答':'dik-dik.png','嘩啦嘩啦':'wa-la.png','叮叮咚咚':'ding-ding.png','轟隆轟隆':'hung-lung.png','呼呼':'fu-fu.png'
-  };
-  const img = imgMap[w.char] ? `<img src="assets/images/${imgMap[w.char]}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
+  const img = w.image ? `<img src="assets/images/${w.image}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
   container.innerHTML = `
     <div class="vocab-card" style="margin-bottom:30px;">
       ${img}
@@ -532,18 +541,110 @@ function showTeacherRecords() {
   goTo('assessment');
 }
 
-// INIT
-function init() {
+// INIT — fetch JSON data then restore session state
+async function init() {
+  try {
+    const resp = await fetch('data/words.json');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    state.categories = data.categories || [];
+
+    // Restore teacher's enabled categories from localStorage
+    const saved = localStorage.getItem('yueAdminSettings');
+    if (saved) {
+      try {
+        const overrides = JSON.parse(saved); // { [catId]: true/false }
+        state.categories.forEach(cat => {
+          if (overrides[cat.id] !== undefined) cat.enabled = overrides[cat.id];
+        });
+      } catch(e) {}
+    }
+
+    _rebuildWords();
+  } catch(e) {
+    console.warn('無法載入 data/words.json，使用空白狀態', e);
+    state.categories = [];
+    state.words = [];
+  }
+
   const saved = localStorage.getItem('yueState');
   if (saved) {
-    try { Object.assign(state, JSON.parse(saved)); } catch(e){}
+    try { Object.assign(state, JSON.parse(saved)); } catch(e) {}
+    // Ensure categories still loaded (session state only has words, not structure)
+    _rebuildWords();
   }
   updateProgress();
-  // Auto load if name exists
   if (state.name) {
     document.getElementById('studentName').value = state.name;
   }
 }
+
+// Build flat words array from currently enabled categories
+function _rebuildWords() {
+  state.words = [];
+  state.categories.forEach(cat => {
+    if (cat.enabled) {
+      cat.words.forEach(w => {
+        state.words.push({ ...w, categoryId: cat.id, categoryLabel: cat.label });
+      });
+    }
+  });
+  // Keep selectedCategoryIds in sync with enabled cats
+  state.selectedCategoryIds = state.categories.filter(c => c.enabled).map(c => c.id);
+}
+
+// Admin panel
+function toggleAdminPanel() {
+  const panel = document.getElementById('adminPanel');
+  const arrow = document.getElementById('adminArrow');
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  arrow.textContent = isHidden ? '▲' : '▼';
+  if (isHidden) renderAdminCategoryList();
+}
+
+function renderAdminCategoryList() {
+  const container = document.getElementById('adminCategoryList');
+  if (state.categories.length === 0) {
+    container.innerHTML = '<p style="color:#f59e0b;">尚無詞彙分類，請確認 data/words.json 已正確載入。</p>';
+    return;
+  }
+  container.innerHTML = state.categories.map(cat => {
+    const wordCount = cat.words ? cat.words.length : 0;
+    return `<label style="display:flex;align-items:center;gap:12px;margin:10px 0;font-size:1.2em;cursor:pointer;">
+      <input type="checkbox" id="cat_toggle_${cat.id}"
+        ${cat.enabled ? 'checked' : ''}
+        onchange="toggleAdminCat('${cat.id}', this.checked)"
+        style="width:26px;height:26px;accent-color:#f59e0b;">
+      <span style="font-weight:bold;color:#f59e0b;min-width:80px;">${cat.label}</span>
+      <span style="color:rgba(255,255,255,0.7);flex:1;">${cat.description || ''}</span>
+      <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${wordCount}詞</span>
+    </label>`;
+  }).join('');
+}
+
+// Temporary tracking of pending toggles before save
+let _pendingCatToggles = {};
+function toggleAdminCat(catId, checked) {
+  _pendingCatToggles[catId] = checked;
+}
+
+function saveAdminSettings() {
+  // Merge pending toggles into actual categories
+  Object.keys(_pendingCatToggles).forEach(catId => {
+    const cat = state.categories.find(c => c.id === catId);
+    if (cat) cat.enabled = _pendingCatToggles[catId];
+  });
+  _pendingCatToggles = {};
+  // Persist overrides to localStorage
+  const overrides = {};
+  state.categories.forEach(cat => { overrides[cat.id] = cat.enabled; });
+  localStorage.setItem('yueAdminSettings', JSON.stringify(overrides));
+  _rebuildWords();
+  renderAdminCategoryList();
+  showToast('✅ 設定已儲存！');
+}
+
 init();
 </script>
 </body>
