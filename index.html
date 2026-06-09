@@ -77,14 +77,60 @@ button:active { transform:scale(0.95); }
         style="background:#555;font-size:1.1em;padding:12px 28px;border-radius:12px;">
         🔧 老師設定 <span id="adminArrow">▼</span>
       </button>
-      <div id="adminPanel" style="display:none;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);border-radius:16px;margin-top:16px;padding:20px;text-align:left;max-width:600px;margin-left:auto;margin-right:auto;">
-        <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
-          開啟詞彙分類，學生學習和評估時只會出現已開啟的分類。
-        </p>
-        <div id="adminCategoryList"></div>
-        <button onclick="saveAdminSettings()" style="margin-top:16px;width:100%;background:#22c55e;font-size:1.1em;padding:14px;">
-          ✅ 儲存設定
-        </button>
+      <div id="adminPanel" style="display:none;background:rgba(255,255,255,0.08);border:2px solid rgba(255,255,255,0.2);border-radius:16px;margin-top:16px;padding:20px;text-align:left;max-width:700px;margin-left:auto;margin-right:auto;">
+
+        <!-- Tab buttons -->
+        <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid rgba(255,255,255,0.2);padding-bottom:0;">
+          <button id="tabSettingsBtn" onclick="switchAdminTab('settings')"
+            style="flex:1;background:#7c3aed;font-size:1.05em;padding:10px 16px;border-radius:8px 8px 0 0;min-height:48px;">
+            📋 設定
+          </button>
+          <button id="tabEditBtn" onclick="switchAdminTab('edit')"
+            style="flex:1;background:#444;font-size:1.05em;padding:10px 16px;border-radius:8px 8px 0 0;min-height:48px;">
+            ✏️ 編輯詞彙
+          </button>
+        </div>
+
+        <!-- Tab: Settings (toggle categories on/off) -->
+        <div id="tabSettingsContent">
+          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
+            開啟詞彙分類，學生學習和評估時只會出現已開啟的分類。
+          </p>
+          <div id="adminCategoryList"></div>
+          <button onclick="saveAdminSettings()" style="margin-top:16px;width:100%;background:#22c55e;font-size:1.1em;padding:14px;">
+            ✅ 儲存設定
+          </button>
+        </div>
+
+        <!-- Tab: Edit (CRUD + import/export) -->
+        <div id="tabEditContent" style="display:none;">
+          <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">
+            新增、修改、刪除詞彙同分類。改動會即時儲存。
+          </p>
+          <div id="editCategoryList"></div>
+          <button onclick="addNewCategory()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">
+            ＋ 新增分類
+          </button>
+
+          <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
+            <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">
+              📦 備份/分享：可將所有詞彙下載為 JSON 檔案，或從 JSON 檔案匯入。
+            </p>
+            <div style="display:flex;gap:8px;">
+              <button onclick="exportWordsJson()" style="flex:1;background:#0ea5e9;font-size:1em;padding:12px;min-height:50px;">
+                ⬇️ 匯出 JSON
+              </button>
+              <button onclick="document.getElementById('importFile').click()" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;min-height:50px;">
+                ⬆️ 匯入 JSON
+              </button>
+              <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importWordsJson(event)">
+            </div>
+            <button onclick="resetToDefaultJson()" style="margin-top:12px;width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">
+              ⚠️ 重設為 data/words.json 預設值
+            </button>
+          </div>
+        </div>
+
       </div>
     </div>
 
@@ -120,6 +166,50 @@ button:active { transform:scale(0.95); }
 </div>
 
 <div id="toast"></div>
+
+<!-- Edit Word Modal -->
+<div id="wordModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:10000;overflow:auto;">
+  <div style="background:#1a1a2e;border:3px solid #f59e0b;border-radius:20px;max-width:560px;margin:40px auto;padding:24px;color:#fff;">
+    <h3 id="wordModalTitle" style="color:#f59e0b;text-align:center;margin-bottom:20px;">✏️ 編輯詞彙</h3>
+    <div style="display:flex;flex-direction:column;gap:14px;">
+      <label style="font-size:1.1em;">
+        字符 <span style="color:#ef4444;">*</span>
+        <input id="wm_char" type="text" maxlength="20" style="width:100%;font-size:1.2em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
+      </label>
+      <label style="font-size:1.1em;">
+        拼音（粵語）
+        <input id="wm_pinyin" type="text" maxlength="50" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
+      </label>
+      <label style="font-size:1.1em;">
+        詞義
+        <input id="wm_meaning" type="text" maxlength="100" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
+      </label>
+      <label style="font-size:1.1em;">
+        朗讀目標（空白則用字符）
+        <input id="wm_target" type="text" maxlength="50" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
+      </label>
+      <label style="font-size:1.1em;">
+        圖片檔名（例：chun-tin.png，留空則無圖）
+        <input id="wm_image" type="text" maxlength="100" style="width:100%;font-size:1em;padding:10px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;font-family:monospace;">
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:20px;">
+      <button onclick="saveWordFromModal()" style="flex:1;background:#22c55e;font-size:1.1em;padding:14px;">💾 儲存</button>
+      <button onclick="closeWordModal()" style="flex:1;background:#666;font-size:1.1em;padding:14px;">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm modal -->
+<div id="confirmModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.75);z-index:10001;">
+  <div style="background:#1a1a2e;border:3px solid #f59e0b;border-radius:20px;max-width:480px;margin:120px auto;padding:24px;color:#fff;text-align:center;">
+    <p id="confirmMsg" style="font-size:1.2em;margin-bottom:20px;"></p>
+    <div style="display:flex;gap:12px;">
+      <button id="confirmYes" style="flex:1;background:#dc2626;font-size:1.1em;padding:14px;">確認</button>
+      <button onclick="closeConfirmModal()" style="flex:1;background:#666;font-size:1.1em;padding:14px;">取消</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // STATE
@@ -549,11 +639,22 @@ async function init() {
     const data = await resp.json();
     state.categories = data.categories || [];
 
-    // Restore teacher's enabled categories from localStorage
-    const saved = localStorage.getItem('yueAdminSettings');
-    if (saved) {
+    // Teacher's local edits take precedence over default JSON
+    const savedCats = localStorage.getItem('yueCategories');
+    if (savedCats) {
       try {
-        const overrides = JSON.parse(saved); // { [catId]: true/false }
+        const parsed = JSON.parse(savedCats);
+        if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+          state.categories = parsed;
+        }
+      } catch(e) {}
+    }
+
+    // Restore enabled states (may be from old or new localStorage)
+    const savedSettings = localStorage.getItem('yueAdminSettings');
+    if (savedSettings) {
+      try {
+        const overrides = JSON.parse(savedSettings);
         state.categories.forEach(cat => {
           if (overrides[cat.id] !== undefined) cat.enabled = overrides[cat.id];
         });
@@ -562,15 +663,19 @@ async function init() {
 
     _rebuildWords();
   } catch(e) {
-    console.warn('無法載入 data/words.json，使用空白狀態', e);
-    state.categories = [];
-    state.words = [];
+    console.warn('無法載入 data/words.json，使用 localStorage 或空白狀態', e);
+    const savedCats = localStorage.getItem('yueCategories');
+    if (savedCats) {
+      try { state.categories = JSON.parse(savedCats); _rebuildWords(); } catch(e2) {}
+    } else {
+      state.categories = [];
+      state.words = [];
+    }
   }
 
   const saved = localStorage.getItem('yueState');
   if (saved) {
     try { Object.assign(state, JSON.parse(saved)); } catch(e) {}
-    // Ensure categories still loaded (session state only has words, not structure)
     _rebuildWords();
   }
   updateProgress();
@@ -642,7 +747,278 @@ function saveAdminSettings() {
   localStorage.setItem('yueAdminSettings', JSON.stringify(overrides));
   _rebuildWords();
   renderAdminCategoryList();
+  renderEditCategoryList();
   showToast('✅ 設定已儲存！');
+}
+
+// ================== EDIT TAB: CRUD ==================
+let _editingWord = null; // { catId, wordIndex } | null
+let _editingCatId = null;
+let _confirmCallback = null;
+
+function switchAdminTab(tab) {
+  const settingsBtn = document.getElementById('tabSettingsBtn');
+  const editBtn = document.getElementById('tabEditBtn');
+  const settingsContent = document.getElementById('tabSettingsContent');
+  const editContent = document.getElementById('tabEditContent');
+  if (tab === 'settings') {
+    settingsBtn.style.background = '#7c3aed';
+    editBtn.style.background = '#444';
+    settingsContent.style.display = 'block';
+    editContent.style.display = 'none';
+  } else {
+    settingsBtn.style.background = '#444';
+    editBtn.style.background = '#7c3aed';
+    settingsContent.style.display = 'none';
+    editContent.style.display = 'block';
+    renderEditCategoryList();
+  }
+}
+
+function renderEditCategoryList() {
+  const container = document.getElementById('editCategoryList');
+  if (state.categories.length === 0) {
+    container.innerHTML = '<p style="color:rgba(255,255,255,0.6);padding:12px 0;">尚無分類，請新增。</p>';
+    return;
+  }
+  container.innerHTML = state.categories.map(cat => {
+    const wordCount = cat.words ? cat.words.length : 0;
+    const wordsHtml = (cat.words || []).map((w, idx) => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;margin:4px 0;">
+        <span style="font-size:1.3em;font-weight:bold;color:#7c3aed;min-width:60px;">${w.char}</span>
+        <span style="color:rgba(255,255,255,0.6);font-size:0.95em;flex:1;">${w.pinyin || ''} ${w.meaning ? '• ' + w.meaning : ''}</span>
+        <button onclick="editWord('${cat.id}', ${idx})" style="background:#0ea5e9;min-height:36px;padding:6px 12px;font-size:0.9em;">✏️</button>
+        <button onclick="deleteWord('${cat.id}', ${idx})" style="background:#dc2626;min-height:36px;padding:6px 12px;font-size:0.9em;">🗑</button>
+      </div>
+    `).join('');
+    return `
+      <div style="background:rgba(255,255,255,0.05);border-radius:12px;margin:10px 0;padding:12px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-weight:bold;color:#f59e0b;font-size:1.15em;flex:1;">${cat.label}</span>
+          <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${wordCount}詞</span>
+          <button onclick="editCategory('${cat.id}')" style="background:#0ea5e9;min-height:36px;padding:6px 12px;font-size:0.9em;">✏️</button>
+          <button onclick="deleteCategory('${cat.id}')" style="background:#dc2626;min-height:36px;padding:6px 12px;font-size:0.9em;">🗑</button>
+        </div>
+        <div style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-bottom:6px;">${cat.description || ''}</div>
+        <div style="margin-top:8px;">${wordsHtml || '<div style="color:rgba(255,255,255,0.4);font-size:0.9em;padding:6px;">此分類暫無詞彙</div>'}</div>
+        <button onclick="addWordToCategory('${cat.id}')" style="background:#7c3aed;margin-top:8px;width:100%;font-size:0.95em;padding:10px;min-height:44px;">＋ 新增詞彙</button>
+      </div>
+    `;
+  }).join('');
+}
+
+// ---- Word CRUD ----
+function addWordToCategory(catId) {
+  _editingWord = { catId, wordIndex: -1 };
+  document.getElementById('wordModalTitle').textContent = '✏️ 新增詞彙';
+  document.getElementById('wm_char').value = '';
+  document.getElementById('wm_pinyin').value = '';
+  document.getElementById('wm_meaning').value = '';
+  document.getElementById('wm_target').value = '';
+  document.getElementById('wm_image').value = '';
+  document.getElementById('wordModal').style.display = 'block';
+}
+
+function editWord(catId, wordIndex) {
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat || !cat.words[wordIndex]) return;
+  _editingWord = { catId, wordIndex };
+  const w = cat.words[wordIndex];
+  document.getElementById('wordModalTitle').textContent = '✏️ 編輯詞彙';
+  document.getElementById('wm_char').value = w.char || '';
+  document.getElementById('wm_pinyin').value = w.pinyin || '';
+  document.getElementById('wm_meaning').value = w.meaning || '';
+  document.getElementById('wm_target').value = w.target || '';
+  document.getElementById('wm_image').value = w.image || '';
+  document.getElementById('wordModal').style.display = 'block';
+}
+
+function saveWordFromModal() {
+  if (!_editingWord) return;
+  const charVal = document.getElementById('wm_char').value.trim();
+  if (!charVal) {
+    alert('請填寫字符');
+    return;
+  }
+  const cat = state.categories.find(c => c.id === _editingWord.catId);
+  if (!cat) return;
+  const newWord = {
+    char: charVal,
+    pinyin: document.getElementById('wm_pinyin').value.trim(),
+    meaning: document.getElementById('wm_meaning').value.trim(),
+    target: document.getElementById('wm_target').value.trim() || charVal,
+    image: document.getElementById('wm_image').value.trim()
+  };
+  if (_editingWord.wordIndex === -1) {
+    cat.words.push(newWord);
+  } else {
+    cat.words[_editingWord.wordIndex] = newWord;
+  }
+  closeWordModal();
+  _persistCategories();
+  renderEditCategoryList();
+  renderAdminCategoryList();
+  _rebuildWords();
+  showToast('✅ 詞彙已儲存');
+}
+
+function closeWordModal() {
+  document.getElementById('wordModal').style.display = 'none';
+  _editingWord = null;
+}
+
+function deleteWord(catId, wordIndex) {
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat || !cat.words[wordIndex]) return;
+  const w = cat.words[wordIndex];
+  showConfirm(`確定刪除詞彙「${w.char}」？`, () => {
+    cat.words.splice(wordIndex, 1);
+    _persistCategories();
+    renderEditCategoryList();
+    renderAdminCategoryList();
+    _rebuildWords();
+    showToast('🗑 詞彙已刪除');
+  });
+}
+
+// ---- Category CRUD ----
+function addNewCategory() {
+  const label = prompt('新分類名稱（例：食物、顏色、交通工具）');
+  if (!label) return;
+  const id = label.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]/g, '') || ('cat_' + Date.now());
+  const description = prompt('分類描述（可選）') || '';
+  if (state.categories.find(c => c.id === id)) {
+    alert('此 ID 已存在，請用另一個名稱');
+    return;
+  }
+  state.categories.push({ id, label, description, enabled: true, words: [] });
+  _persistCategories();
+  renderEditCategoryList();
+  renderAdminCategoryList();
+  _rebuildWords();
+  showToast('✅ 新分類已新增');
+}
+
+function editCategory(catId) {
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat) return;
+  const newLabel = prompt('分類名稱', cat.label);
+  if (newLabel === null) return;
+  if (newLabel.trim()) cat.label = newLabel.trim();
+  const newDesc = prompt('分類描述', cat.description || '');
+  if (newDesc !== null) cat.description = newDesc.trim();
+  _persistCategories();
+  renderEditCategoryList();
+  renderAdminCategoryList();
+  _rebuildWords();
+  showToast('✅ 分類已更新');
+}
+
+function deleteCategory(catId) {
+  const cat = state.categories.find(c => c.id === catId);
+  if (!cat) return;
+  const wordCount = cat.words ? cat.words.length : 0;
+  showConfirm(`確定刪除分類「${cat.label}」及其 ${wordCount} 個詞彙？此操作無法復原。`, () => {
+    state.categories = state.categories.filter(c => c.id !== catId);
+    _persistCategories();
+    renderEditCategoryList();
+    renderAdminCategoryList();
+    _rebuildWords();
+    showToast('🗑 分類已刪除');
+  });
+}
+
+// ---- Confirm modal ----
+function showConfirm(msg, onYes) {
+  document.getElementById('confirmMsg').textContent = msg;
+  _confirmCallback = onYes;
+  document.getElementById('confirmModal').style.display = 'block';
+}
+function closeConfirmModal() {
+  document.getElementById('confirmModal').style.display = 'none';
+  _confirmCallback = null;
+}
+document.getElementById('confirmYes').addEventListener('click', () => {
+  if (_confirmCallback) _confirmCallback();
+  closeConfirmModal();
+});
+
+// ================== IMPORT / EXPORT ==================
+function exportWordsJson() {
+  const data = {
+    _comment: '粵語朗讀評分 — 詞彙資料庫',
+    _exported_at: new Date().toISOString(),
+    categories: state.categories
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'words_' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast('⬇️ 已下載 JSON');
+}
+
+function importWordsJson(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.categories || !Array.isArray(data.categories)) {
+        throw new Error('JSON 格式錯誤：缺少 categories 陣列');
+      }
+      showConfirm(`將匯入 ${data.categories.length} 個分類（${data.categories.reduce((s,c)=>s+(c.words||[]).length,0)} 個詞彙）。現有資料會被取代，確定？`, () => {
+        state.categories = data.categories;
+        // Preserve existing enabled states where possible
+        const oldEnabled = {};
+        JSON.parse(localStorage.getItem('yueAdminSettings') || '{}');
+        state.categories.forEach(cat => {
+          cat.enabled = cat.enabled !== false; // default true on import
+        });
+        _persistCategories();
+        renderEditCategoryList();
+        renderAdminCategoryList();
+        _rebuildWords();
+        showToast('⬆️ 匯入成功！');
+      });
+    } catch(err) {
+      alert('匯入失敗：' + err.message);
+    }
+    event.target.value = ''; // allow re-import same file
+  };
+  reader.readAsText(file);
+}
+
+function resetToDefaultJson() {
+  showConfirm('重設後將清除所有自訂詞彙，回到 data/words.json 預設內容。確定？', async () => {
+    try {
+      const resp = await fetch('data/words.json');
+      const data = await resp.json();
+      state.categories = data.categories || [];
+      localStorage.removeItem('yueCategories');
+      localStorage.removeItem('yueAdminSettings');
+      renderEditCategoryList();
+      renderAdminCategoryList();
+      _rebuildWords();
+      showToast('🔄 已重設為預設值');
+    } catch(e) {
+      alert('重設失敗：' + e.message);
+    }
+  });
+}
+
+// ================== PERSIST ==================
+function _persistCategories() {
+  localStorage.setItem('yueCategories', JSON.stringify(state.categories));
+  // Also refresh enabled state to admin settings
+  const overrides = {};
+  state.categories.forEach(cat => { overrides[cat.id] = cat.enabled; });
+  localStorage.setItem('yueAdminSettings', JSON.stringify(overrides));
 }
 
 init();
