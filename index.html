@@ -1241,6 +1241,12 @@ async function init() {
     state.progress = JSON.parse(localStorage.getItem('yueProgress') || '{}');
   } catch(e) { state.progress = {}; }
 
+  // Auto-seed sample dashboard data on first run (v1.1.2)
+  // - Only triggers if: never seeded before AND no real progress exists
+  // - Once seeded, localStorage flag prevents re-seeding even after clearing
+  // - User can re-trigger manually from dashboard button
+  _seedDemoProgress();
+
   // Load ASR engine preference
   const savedEngine = localStorage.getItem('yueAsrEngine');
   if (savedEngine && _ASR_ENGINES[savedEngine]) {
@@ -1675,6 +1681,126 @@ function _persistProgress() {
   localStorage.setItem('yueProgress', JSON.stringify(state.progress));
 }
 
+// ================== SAMPLE DATA SEED ==================
+// Generate realistic-looking 14-day progress data so the teacher dashboard
+// shows real charts out of the box. Idempotent: runs only once per browser
+// (yueSeededDemo flag) and only if the user has no real progress yet.
+const _DEMO_SEED_KEY = 'yueSeededDemo';
+const _DEMO_SEED_VERSION = 'v1.1.2';
+
+function _seedDemoProgress() {
+  // Skip if already seeded in this version
+  const seededAt = localStorage.getItem(_DEMO_SEED_KEY);
+  if (seededAt === _DEMO_SEED_VERSION) return;
+
+  // Don't clobber real user data
+  const hasRealProgress = Object.keys(state.progress).length > 0;
+  if (hasRealProgress) {
+    // Mark as seeded so we never check again
+    localStorage.setItem(_DEMO_SEED_KEY, _DEMO_SEED_VERSION);
+    return;
+  }
+
+  if (state.students.length === 0 || state.words.length === 0) {
+    // No data to seed against — defer
+    return;
+  }
+
+  // Add 3 synthetic students so the dashboard has 4 students total.
+  // Only if currently just the demo student exists (i.e., fresh install / first run).
+  // If teacher has already added their own students, leave them alone.
+  const now = Date.now();
+  const day = 86400000;
+  if (state.students.length === 1 && state.students[0].id === 's_demo') {
+    const extras = [
+      { id: 's_sarah', name: '曉怡', pin: '11111', avatar: '🌸', color: '#ec4899',
+        createdAt: new Date(now - 32*day).toISOString() },
+      { id: 's_tommy', name: '俊軒', pin: '22222', avatar: '🚀', color: '#3b82f6',
+        createdAt: new Date(now - 28*day).toISOString() },
+      { id: 's_amy',   name: '心悅', pin: '33333', avatar: '🦋', color: '#a855f7',
+        createdAt: new Date(now - 21*day).toISOString() },
+    ];
+    state.students = [...state.students, ...extras];
+    _persistStudents();
+  }
+
+  // Per-student profile: avg base, variance, attempt count, mastery level
+  // Higher mastery = more words touched, higher bestScore
+  const profileById = {
+    's_demo':  { avgBase: 68, variance: 22, attempts: 32, mastery: 0.55 },
+    's_sarah': { avgBase: 88, variance: 8,  attempts: 46, mastery: 0.85 },
+    's_tommy': { avgBase: 48, variance: 24, attempts: 24, mastery: 0.40 },
+    's_amy':   { avgBase: 74, variance: 14, attempts: 38, mastery: 0.70 },
+  };
+
+  state.students.forEach((s) => {
+    const prof = profileById[s.id] || { avgBase: 65, variance: 18, attempts: 28, mastery: 0.55 };
+    const prog = { byWord: {}, totalAttempts: 0, lastSession: null, scores: [] };
+
+    // Which words this student will touch — mastery % of total vocab
+    const targetWords = [];
+    state.words.forEach((w, i) => {
+      if (Math.random() < prof.mastery) targetWords.push(w);
+    });
+    // Guarantee at least a few words even for low-mastery
+    if (targetWords.length < 3 && state.words.length >= 3) {
+      for (let i = 0; i < 3; i++) targetWords.push(state.words[i]);
+    }
+
+    for (let i = 0; i < prof.attempts; i++) {
+      // Cluster attempts toward recent days (skewed random)
+      const daysAgoRaw = Math.pow(Math.random(), 1.4) * 14;
+      const daysAgo = Math.floor(daysAgoRaw);
+      const ts = now - daysAgo * day - Math.floor(Math.random() * day);
+
+      // Pick a word (with mild recency bias — repeated practice on same word)
+      const w = targetWords[Math.floor(Math.random() * targetWords.length)];
+
+      // Learning curve: more recent days score slightly higher
+      const learningBoost = Math.max(0, (14 - daysAgo) * 0.6);
+
+      // Slight per-attempt jitter
+      const jitter = (Math.random() - 0.5) * prof.variance;
+      const score = Math.max(20, Math.min(99, Math.round(prof.avgBase + learningBoost + jitter)));
+      const at = new Date(ts).toISOString();
+
+      prog.scores.push({ word: w.char, score, at });
+      prog.totalAttempts += 1;
+      if (!prog.lastSession || at > prog.lastSession) prog.lastSession = at;
+
+      const key = w.char;
+      if (!prog.byWord[key]) {
+        prog.byWord[key] = { bestScore: 0, attempts: 0, lastAt: null };
+      }
+      if (score > prog.byWord[key].bestScore) prog.byWord[key].bestScore = score;
+      prog.byWord[key].attempts += 1;
+      if (!prog.byWord[key].lastAt || at > prog.byWord[key].lastAt) {
+        prog.byWord[key].lastAt = at;
+      }
+    }
+
+    // Sort by time so trend lines render in chronological order
+    prog.scores.sort((a, b) => new Date(a.at) - new Date(b.at));
+    state.progress[s.id] = prog;
+  });
+
+  _persistProgress();
+  localStorage.setItem(_DEMO_SEED_KEY, _DEMO_SEED_VERSION);
+}
+
+// Manual re-seed: wipes yueProgress + yueSeededDemo, then re-runs auto-seed.
+// Confirm before destroying any real user data.
+function _reseedDemoProgress() {
+  const msg = '確定要重設示範數據？\n\n呢個會清除現時所有學生嘅練習記錄，重新生成 14 日嘅示範數據。\n（你之前加嘅學生名單會保留）';
+  if (!confirm(msg)) return;
+  state.progress = {};
+  localStorage.removeItem('yueProgress');
+  localStorage.removeItem(_DEMO_SEED_KEY);
+  _seedDemoProgress();
+  renderDashboard();
+  showToast('✅ 已重設示範數據');
+}
+
 // ================== ASR ENGINE UI ==================
 function setAsrEngine(engineId) {
   if (!_ASR_ENGINES[engineId]) return;
@@ -2092,6 +2218,14 @@ function renderDashboard() {
   // Top-level PDF export
   if (totalAttempts > 0) {
     html += `<button onclick="exportClassReport()" style="margin-top:16px;width:100%;background:#0ea5e9;font-size:1.05em;padding:14px;">📄 匯出全班報告 (PDF)</button>`;
+  }
+
+  // Dev/demo helper — re-seed sample data (for teacher demo / preview)
+  // Shown only if demo data has been seeded; lets teacher refresh sample data
+  if (localStorage.getItem(_DEMO_SEED_KEY) === _DEMO_SEED_VERSION) {
+    html += `<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.15);">
+      <button onclick="_reseedDemoProgress()" style="background:transparent;color:rgba(255,255,255,0.5);font-size:0.85em;padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">🧪 重設示範數據</button>
+    </div>`;
   }
 
   container.innerHTML = html;
