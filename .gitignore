@@ -1,3 +1,6 @@
 # Test artifacts
 dashboard-*.png
 test-*.mjs
+
+# macOS
+.DS_Store
