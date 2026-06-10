@@ -2000,6 +2000,12 @@ function _recordAttempt(word, score, transcript) {
     p.byWord[word] = { bestScore: 0, attempts: 0, lastTry: null, history: [] };
   }
   const w = p.byWord[word];
+  // Defensive: old progress data (pre-history field, pre-lastTry) may be missing these.
+  // The seed code in _seedDemoProgress still writes `lastAt` (no `lastTry`, no `history`),
+  // and any byWord entry from an earlier version of the app may be in the old shape.
+  // Guarding here prevents the throw that breaks `scorePronunciation` mid-flow.
+  if (!w.history) w.history = [];
+  if (!w.lastTry && w.lastAt) w.lastTry = w.lastAt;
   const now = new Date().toISOString();
   w.attempts += 1;
   w.lastTry = now;
