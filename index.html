@@ -96,7 +96,7 @@ button:active { transform:scale(0.95); }
 
     <!-- Student avatar grid -->
     <p style="font-size:1.1em;color:rgba(255,255,255,0.7);margin-bottom:20px;">撳你嘅相卡嚟開始</p>
-    <div id="studentAvatarGrid" style="display:grid;gap:16px;max-width:560px;margin:0 auto;"></div>
+    <div id="studentAvatarGrid" style="display:grid;gap:16px;max-width:560px;margin:0 auto;"><div style="grid-column:1/-1;text-align:center;padding:60px 0;color:rgba(255,255,255,0.4);font-size:1.2em;">⏳ 載入中…</div></div>
     <div id="loginError" style="color:#ef4444;font-size:1.1em;min-height:24px;margin-top:16px;"></div>
 
     <!-- Confirmation modal -->
@@ -539,7 +539,7 @@ function initVocab() {
   Object.keys(cats).forEach(key => {
     html += `<div style="grid-column:1/-1;margin:10px 0 5px;font-weight:bold;color:#f59e0b;">${_e(key)}</div>`;
     cats[key].forEach(({ w, i }) => {
-      const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;">` : '';
+      const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;" loading="lazy">` : '';
       html += `
     <div class="vocab-card" data-practice-idx="${i}">
       ${img}
@@ -597,7 +597,7 @@ function showCategorySelector() {
     const wordCount = cat.words ? cat.words.length : 0;
     const banner = `assets/images/decorative/banner-${cat.id}.png`;
     html += `<div style="margin:14px 0;border-radius:16px;overflow:hidden;background:rgba(255,255,255,0.05);">
-      <img src="${banner}" alt="${cat.label}" style="width:100%;height:90px;object-fit:cover;display:block;" onerror="this.style.display='none'">
+      <img src="${banner}" alt="${cat.label}" style="width:100%;height:90px;object-fit:cover;display:block;" onerror="this.style.display='none'" loading="lazy">
       <label style="display:flex;align-items:center;gap:10px;margin:0;padding:12px;font-size:1.2em;">
         <input type="checkbox" ${checked} onchange="toggleCategory('${cat.id}', this.checked)" style="width:26px;height:26px;accent-color:#f59e0b;">
         <span style="font-weight:bold;">${cat.label}</span>
@@ -645,7 +645,7 @@ function renderFilteredAssessment() {
   }
   const w = state.filteredWords[state.assessmentIndex];
   state.currentWord = w;
-  const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
+  const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;" loading="lazy">` : '';
   container.innerHTML = `
     <div class="vocab-card" style="margin-bottom:30px;">
       ${img}
@@ -1315,13 +1315,11 @@ async function init() {
     state.progress = JSON.parse(localStorage.getItem('yueProgress') || '{}');
   } catch(e) { state.progress = {}; }
 
-  // Auto-seed sample dashboard data on first run (v1.1.2)
-  // - Only triggers if: never seeded before AND no real progress exists
-  // - Once seeded, localStorage flag prevents re-seeding even after clearing
-  // - User can re-trigger manually from dashboard button
-  _seedDemoProgress();
+  // Defer heavy demo seeding off the critical path — keep UI responsive on first paint.
+  // Run it only after the page has rendered so it never blocks the initial display.
+  setTimeout(() => { try { _seedDemoProgress(); } catch(e) { console.warn('[seed]', e); } }, 100);
 
-  // Load ASR engine preference
+  // Load recording timeout
   const savedEngine = localStorage.getItem('yueAsrEngine');
   if (savedEngine && _ASR_ENGINES[savedEngine]) {
     state.asrEngine = savedEngine;
