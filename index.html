@@ -1414,7 +1414,33 @@ function _loginStudent(student) {
   showToast(`歡迎返嚟，${student.name}！`);
 }
 
-function enterTeacherMode() {
+const _TEACHER_PASS_KEY = 'yueTeacherPassHash';
+
+async function _hashTeacherPass(pass) {
+  const data = new TextEncoder().encode(pass);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function enterTeacherMode() {
+  // First-time setup: ask teacher to set a password (min 6 chars)
+  let stored = localStorage.getItem(_TEACHER_PASS_KEY);
+  if (!stored) {
+    const pass = prompt('首次進入老師模式。請設定老師密碼（至少 6 個字元）：');
+    if (!pass) return;
+    if (pass.length < 6) { alert('密碼至少 6 個字元'); return; }
+    const confirm = prompt('再輸入一次確認：');
+    if (confirm !== pass) { alert('兩次輸入唔一致'); return; }
+    const hash = await _hashTeacherPass(pass);
+    localStorage.setItem(_TEACHER_PASS_KEY, hash);
+    showToast('✅ 老師密碼已設定');
+  } else {
+    // Existing: ask for password
+    const pass = prompt('請輸入老師密碼：');
+    if (!pass) return;
+    const hash = await _hashTeacherPass(pass);
+    if (hash !== stored) { alert('❌ 密碼唔啱'); return; }
+  }
   state.mode = 'teacher';
   goTo('teacher');
   tchSwitchTab('dashboard');
@@ -1425,6 +1451,19 @@ function exitTeacherMode() {
   state.mode = 'student';
   goTo('home');
   showToast('👋 已退出老師模式');
+}
+
+// Allow teacher to reset their password from the settings tab
+async function resetTeacherPassword() {
+  if (!confirm('確定重設老師密碼？')) return;
+  const pass = prompt('新密碼（至少 6 個字元）：');
+  if (!pass) return;
+  if (pass.length < 6) { alert('密碼至少 6 個字元'); return; }
+  const confirm = prompt('再輸入一次確認：');
+  if (confirm !== pass) { alert('兩次輸入唔一致'); return; }
+  const hash = await _hashTeacherPass(pass);
+  localStorage.setItem(_TEACHER_PASS_KEY, hash);
+  showToast('✅ 老師密碼已更新');
 }
 
 function tchSwitchTab(tab) {
@@ -1524,6 +1563,7 @@ function renderTeacherSettings() {
     <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;">
       <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">🔧 進階</p>
       <button onclick="clearAudioBaselines()" style="background:#dc2626;width:100%;font-size:0.95em;padding:10px;min-height:44px;">🗑 清除自訂引擎聲紋 baseline</button>
+      <button onclick="resetTeacherPassword()" style="background:#f59e0b;width:100%;font-size:0.95em;padding:10px;min-height:44px;margin-top:8px;">🔑 重設老師密碼</button>
     </div>
   `;
   renderAsrEngineList();
