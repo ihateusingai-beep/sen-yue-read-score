@@ -844,7 +844,13 @@ function _updateAudioBaseline(word, features) {
 function scorePronunciation(transcript, opts) {
   opts = opts || {};
   const w = state.currentWord;
-  const target = w.target;
+  // Guard: imported/legacy word data may not have a `target` field.
+  // Fall back to `char` so scoring still works; surface a console warning
+  // so the data gap is visible to the teacher via DevTools.
+  if (!w.target) {
+    console.warn(`[scorePronunciation] word "${w.char}" missing target field, falling back to char`);
+  }
+  const target = w.target || w.char || '';
   let aiScore, feedback, scoringMethod;
 
   if (opts.engine === 'custom' && opts.customScore) {
@@ -1199,16 +1205,39 @@ async function init() {
     const resp = await fetch('data/words.json');
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
-    state.categories = data.categories || [];
+    const fresh = data.categories || [];
 
     const savedCats = localStorage.getItem('yueCategories');
     if (savedCats) {
       try {
         const parsed = JSON.parse(savedCats);
         if (parsed && Array.isArray(parsed) && parsed.length > 0) {
-          state.categories = parsed;
+          // Reconcile: keep saved categories but backfill any new ones from JSON
+          // (handles teacher updating data/words.json and serving new categories
+          // to a client that has stale localStorage).
+          const savedById = {};
+          parsed.forEach(c => { savedById[c.id] = c; });
+          const reconciled = fresh.map(fc => {
+            const saved = savedById[fc.id];
+            if (saved) {
+              // Saved exists: preserve its enabled state and any custom edits (label/description/words)
+              return { ...fc, ...saved, id: fc.id, words: Array.isArray(saved.words) ? saved.words : (fc.words || []) };
+            }
+            return fc; // new category from JSON
+          });
+          // Keep any custom categories the teacher created that aren't in fresh JSON
+          parsed.forEach(p => {
+            if (!fresh.find(f => f.id === p.id)) reconciled.push(p);
+          });
+          state.categories = reconciled;
+        } else {
+          state.categories = fresh;
         }
-      } catch(e) {}
+      } catch(e) {
+        state.categories = fresh;
+      }
+    } else {
+      state.categories = fresh;
     }
 
     const savedSettings = localStorage.getItem('yueAdminSettings');
@@ -2457,19 +2486,18 @@ function _renderWordDrillDownPanel(word) {
   const untouched = rows.filter(r => r.bestScore === null);
 
   const renderRow = (r, label, color) => {
-    const isStruggling = r.bestScore !== null && r.bestScore < 70;
-    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;margin:4px 0;border-left:3px solid ${color};">
+    return `<div style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(255,255,255,0.05);border-radius:8px;margin:4px 0;border-left:3px solid ${_e(color)};">
       <span style="font-size:1.3em;">${r.s.avatar || '🌟'}</span>
-      <span style="flex:1;font-weight:bold;">${r.s.name}</span>
-      <span style="font-size:0.85em;color:rgba(255,255,255,0.7);">${label}</span>
-      <button onclick="showStudentDetail('${r.s.id}','${word.replace(/'/g, "\\'")}')" style="background:#0ea5e9;font-size:0.85em;padding:6px 10px;min-height:36px;">查看 →</button>
+      <span style="flex:1;font-weight:bold;">${_e(r.s.name)}</span>
+      <span style="font-size:0.85em;color:rgba(255,255,255,0.7);">${_e(label)}</span>
+      <button onclick="showStudentDetail('${_e(r.s.id)}','${_e(word).replace(/'/g, "\\'")}')" style="background:#0ea5e9;font-size:0.85em;padding:6px 10px;min-height:36px;">查看 →</button>
     </div>`;
   };
 
   return `<div id="wordDrillDownPanel" style="background:linear-gradient(135deg,rgba(245,158,11,0.15),rgba(239,68,68,0.15));border:2px solid rgba(245,158,11,0.4);border-radius:12px;padding:14px;margin-bottom:14px;">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
       <span style="font-size:1.5em;">🔍</span>
-      <span style="font-weight:bold;color:#f59e0b;font-size:1.1em;flex:1;">「${word}」 — 邊啲學生掂緊？</span>
+      <span style="font-weight:bold;color:#f59e0b;font-size:1.1em;flex:1;">「${_e(word)}」 — 邊啲學生掂緊？</span>
       <button onclick="_closeWordDrillDown()" style="background:rgba(255,255,255,0.15);font-size:0.85em;padding:4px 10px;min-height:32px;">✕ 關閉</button>
     </div>
     ${struggling.length > 0
@@ -2850,19 +2878,29 @@ function _buildDailyAvg(scores, days) {
   return result;
 }
 
-// Calculate consecutive-day streak from scores
+// Calculate consecutive-day streak from scores.
+// Uses local-midnight YYYY-MM-DD keys (timezone-safe: a score at 23:00
+// in HK and a score at 01:00 the next day both bucket into the correct
+// local day, not UTC day). This fixes the previous `toDateString()` bug
+// where DST or TZ shifts could miscount streaks.
 function _calcStreak(scores) {
   if (!scores || scores.length === 0) return 0;
-  const dates = new Set(scores.map(s => new Date(s.at).toDateString()));
+  const dayKey = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+  const dates = new Set(scores.map(s => dayKey(new Date(s.at))));
   let streak = 0;
   const today = new Date();
   // Allow today OR yesterday to be the streak start (don't break streak if not practiced today)
   let checkDate = new Date(today);
-  if (!dates.has(checkDate.toDateString())) {
+  if (!dates.has(dayKey(checkDate))) {
     checkDate = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-    if (!dates.has(checkDate.toDateString())) return 0;
+    if (!dates.has(dayKey(checkDate))) return 0;
   }
-  while (dates.has(checkDate.toDateString())) {
+  while (dates.has(dayKey(checkDate))) {
     streak++;
     checkDate = new Date(checkDate.getTime() - 24 * 60 * 60 * 1000);
   }
@@ -2969,7 +3007,7 @@ function exportStudentReport(studentId) {
   const struggling = Object.values(p.byWord || {}).filter(w => w.attempts >= 2 && w.bestScore < 60).length;
 
   const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html><html lang="zh-HK"><head><title>${s.name} 練習報告</title>
+  win.document.write(`<!DOCTYPE html><html lang="zh-HK"><head><title>${_e(s.name)} 練習報告</title>
     <meta charset="UTF-8">
     <style>
       body { font-family: 'Microsoft JhengHei', sans-serif; padding: 40px; color: #1a1a2e; max-width: 800px; margin: 0 auto; }
@@ -2991,11 +3029,11 @@ function exportStudentReport(studentId) {
     </style>
   </head><body>
     <button class="print-btn" onclick="window.print()">🖨️ 列印 / 存為 PDF</button>
-    <h1>${s.avatar || '🌟'} ${s.name} — 粵語朗讀練習報告</h1>
+    <h1>${_e(s.avatar || '🌟')} ${_e(s.name)} — 粵語朗讀練習報告</h1>
     <div class="meta">
-      報告產生日期：${new Date().toLocaleString('zh-HK')}<br>
+      報告產生日期：${_e(new Date().toLocaleString('zh-HK'))}<br>
       學校：匡智張玉瓊晨輝學校<br>
-      評估引擎：${state.asrEngine}
+      評估引擎：${_e(state.asrEngine)}
     </div>
     <div class="stats">
       <div class="stat"><div class="stat-num">${p.totalAttempts || 0}</div><div class="stat-label">總練習次數</div></div>
@@ -3013,7 +3051,7 @@ function exportStudentReport(studentId) {
         ${words.map(([word, data]) => {
           const status = data.bestScore >= 80 ? '<span class="status-ok">✅ 已掌握</span>' : data.bestScore >= 60 ? '<span class="status-mid">👍 進步中</span>' : '<span class="status-warn">⚠️ 待加強</span>';
           const lastTry = data.lastTry ? new Date(data.lastTry).toLocaleString('zh-HK') : '—';
-          return `<tr><td><b>${word}</b></td><td>${data.attempts}</td><td>${data.bestScore}</td><td>${status}</td><td>${lastTry}</td></tr>`;
+          return `<tr><td><b>${_e(word)}</b></td><td>${data.attempts}</td><td>${data.bestScore}</td><td>${status}</td><td>${_e(lastTry)}</td></tr>`;
         }).join('')}
       </tbody>
     </table>`}
@@ -3468,11 +3506,30 @@ function importWordsJson(event) {
       if (!data.categories || !Array.isArray(data.categories)) {
         throw new Error('JSON 格式錯誤：缺少 categories 陣列');
       }
-      showConfirm(`將匯入 ${data.categories.length} 個分類（${data.categories.reduce((s,c)=>s+(c.words||[]).length,0)} 個詞彙）。現有資料會被取代，確定？`, () => {
+      // Validate each category: must have id (string), label (string), words (array)
+      // and each word must have char (string). Drop malformed entries with a warning.
+      const warnings = [];
+      data.categories.forEach((cat, ci) => {
+        if (typeof cat.id !== 'string' || !cat.id) {
+          throw new Error(`分類 #${ci} 缺少有效 id`);
+        }
+        if (typeof cat.label !== 'string') cat.label = cat.id;
+        if (!Array.isArray(cat.words)) {
+          warnings.push(`分類「${cat.id}」words 唔係 array，已清空`);
+          cat.words = [];
+        } else {
+          cat.words = cat.words.filter(w => {
+            if (typeof w !== 'object' || !w || typeof w.char !== 'string') {
+              warnings.push(`分類「${cat.id}」有唔識嘅 word，已略過`);
+              return false;
+            }
+            return true;
+          });
+        }
+      });
+      const note = warnings.length > 0 ? `\n\n⚠️ ${warnings.slice(0, 3).join('；')}${warnings.length > 3 ? `…仲有 ${warnings.length - 3} 個 warning` : ''}` : '';
+      showConfirm(`將匯入 ${data.categories.length} 個分類（${data.categories.reduce((s,c)=>s+(c.words||[]).length,0)} 個詞彙）。現有資料會被取代，確定？${note}`, () => {
         state.categories = data.categories;
-        // Preserve existing enabled states where possible
-        const oldEnabled = {};
-        JSON.parse(localStorage.getItem('yueAdminSettings') || '{}');
         state.categories.forEach(cat => {
           cat.enabled = cat.enabled !== false; // default true on import
         });
@@ -3480,7 +3537,7 @@ function importWordsJson(event) {
         renderEditCategoryList();
         renderAdminCategoryList();
         _rebuildWords();
-        showToast('⬆️ 匯入成功！');
+        showToast(warnings.length > 0 ? `⬆️ 匯入成功（${warnings.length} 個 warning）` : '⬆️ 匯入成功！');
       });
     } catch(err) {
       alert('匯入失敗：' + err.message);
