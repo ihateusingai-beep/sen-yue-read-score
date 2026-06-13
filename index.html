@@ -37,11 +37,23 @@ button:active { transform:scale(0.95); }
 .progress-dot.current { background:#f59e0b; animation:pulse 1.5s infinite; }
 @keyframes pulse { 50%{transform:scale(1.2);} }
 #toast { position:fixed; bottom:30px; left:50%; transform:translateX(-50%); background:#333; color:#fff; padding:14px 28px; border-radius:12px; z-index:9999; display:none; pointer-events:none; }
-.pin-slot { display:inline-flex;align-items:center;justify-content:center;width:48px;height:60px;background:#fff;color:#1a1a2e;font-size:2.2em;font-weight:bold;border-radius:12px;border:3px solid #f59e0b; }
-.pin-slot.filled { background:#f59e0b;color:#fff; }
-.pin-btn { background:#7c3aed;color:#fff;font-size:2em;padding:0;min-height:80px;border-radius:16px;cursor:pointer;touch-action:manipulation; }
-.pin-btn:active { transform:scale(0.95); }
-.student-avatar-card { background:#fff;color:#1a1a2e;border:4px solid #f59e0b;border-radius:20px;padding:16px;cursor:pointer;text-align:center;transition:transform .2s;touch-action:manipulation; }
+.student-avatar-card {
+  background:#fff;
+  color:#1a1a2e;
+  border:4px solid #f59e0b;
+  border-radius:20px;
+  padding:20px 12px;
+  cursor:pointer;
+  text-align:center;
+  transition:transform .2s;
+  touch-action:manipulation;
+  min-height:120px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:6px;
+}
 .student-avatar-card:hover { transform:scale(1.05); }
 .student-avatar-card:active { transform:scale(0.95); }
 .student-emoji { font-size:3em;display:block;margin-bottom:6px; }
@@ -50,7 +62,7 @@ button:active { transform:scale(0.95); }
 @media (max-width: 600px) {
   body { font-size:16px; }
   .page { padding:12px; padding-top:48px; }  /* leave room for fixed progress bar */
-  /* Shrink the home card top margin so PIN keypad fits */
+  /* Shrink the home card top margin so PIN keypad fits — kept for reference only (PIN mode removed 2026-06-13) */
   .home-card[style*="margin-top:60px"] { margin-top:20px !important; }
   h1, h2 { font-size:1.6em; }
   .home-card, .hub-card, .vocab-card, .result-card { padding:16px; margin:12px auto; border-width:3px; }
@@ -59,69 +71,51 @@ button:active { transform:scale(0.95); }
   .hub-icon { font-size:2.4em; }
   /* Vocab grid: still auto-fit but allow smaller min so single-column on phone */
   .vocab-grid { grid-template-columns:1fr; gap:12px; }
-  /* Teacher summary 4-col → 2-col on phone (3-col grids stay — PIN keypad needs 3-col) */
+  /* Teacher summary 4-col → 2-col on phone */
   .page > div[style*="grid-template-columns:repeat(4,1fr)"] { grid-template-columns:repeat(2,1fr) !important; }
   /* Touch target enforcement */
   button, input { min-height:60px; font-size:1.2em; }
-  .pin-slot { width:42px; height:54px; font-size:1.9em; }
-  .pin-btn { min-height:64px; }
+  /* Student avatar grid: 2 columns on phone */
+  #studentAvatarGrid { grid-template-columns:repeat(2,1fr) !important; gap:12px !important; }
+  .student-avatar-card { min-height:100px !important; padding:14px 8px !important; }
 }
 @media (max-width: 380px) {
-  /* Very narrow phone: tighter everything */
-  body { font-size:15px; }
-  .home-card, .hub-card, .vocab-card, .result-card { padding:12px; }
-  .hub-icon { font-size:2em; }
-  .pin-slot { width:36px; height:48px; font-size:1.7em; }
-  .pin-btn { min-height:60px; font-size:1.7em; }
+  /* Very narrow phone: tighter grid */
+  .student-avatar-card { min-height:90px !important; padding:10px 6px !important; }
 }
 </style>
 </head>
 <body>
 <div class="progress"><div class="progress-dots" id="progressDots"></div></div>
 
-<!-- HOME / LOGIN -->
+<!-- HOME / LOGIN — student grid (no auth needed for SEN use case) -->
 <div id="home" class="page active">
-  <div class="home-card" style="text-align:center;margin-top:60px;">
-    <h1>粵語朗讀評分</h1>
-    <p style="font-size:1.2em;margin:10px 0 20px;">即時 AI 發音評估</p>
+  <div style="text-align:center;max-width:700px;margin:40px auto;padding:0 20px;">
+    <h1 style="font-size:2.2em;color:#f59e0b;margin-bottom:8px;">粵語朗讀評分</h1>
+    <p style="font-size:1.2em;color:rgba(255,255,255,0.8);margin-bottom:32px;">即時 AI 發音評估</p>
 
-    <!-- 登入模式：PIN -->
-    <div id="loginPinMode">
-      <p style="font-size:1.1em;margin:20px 0 10px;">輸入你嘅 5 位數字密碼</p>
-      <div id="pinDisplay" style="display:flex;justify-content:center;gap:10px;margin:20px 0;">
-        <span class="pin-slot">·</span><span class="pin-slot">·</span><span class="pin-slot">·</span><span class="pin-slot">·</span><span class="pin-slot">·</span>
+    <!-- Student avatar grid -->
+    <p style="font-size:1.1em;color:rgba(255,255,255,0.7);margin-bottom:20px;">撳你嘅相卡嚟開始</p>
+    <div id="studentAvatarGrid" style="display:grid;gap:16px;max-width:560px;margin:0 auto;"></div>
+    <div id="loginError" style="color:#ef4444;font-size:1.1em;min-height:24px;margin-top:16px;"></div>
+
+    <!-- Confirmation modal -->
+    <div id="confirmCard" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:9000;align-items:center;justify-content:center;">
+      <div style="background:#1a1a2e;border:4px solid #f59e0b;border-radius:24px;padding:32px;max-width:340px;width:90%;text-align:center;">
+        <div id="confirmCardEmoji" style="font-size:5em;margin-bottom:12px;"></div>
+        <div id="confirmCardName" style="font-size:2em;font-weight:bold;color:#f59e0b;margin-bottom:8px;"></div>
+        <div style="color:rgba(255,255,255,0.7);font-size:1.1em;margin-bottom:28px;">係你嗎？</div>
+        <button id="confirmCardYes" style="width:100%;background:#22c55e;font-size:1.3em;padding:16px;border-radius:16px;min-height:64px;">係，開始 ✅</button>
+        <button onclick="cancelCardLogin()" style="margin-top:12px;background:#444;color:#fff;font-size:1.1em;padding:12px;border-radius:14px;width:100%;min-height:52px;">唔係，取消</button>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:300px;margin:20px auto;">
-        <button class="pin-btn" onclick="pinPress('1')">1</button>
-        <button class="pin-btn" onclick="pinPress('2')">2</button>
-        <button class="pin-btn" onclick="pinPress('3')">3</button>
-        <button class="pin-btn" onclick="pinPress('4')">4</button>
-        <button class="pin-btn" onclick="pinPress('5')">5</button>
-        <button class="pin-btn" onclick="pinPress('6')">6</button>
-        <button class="pin-btn" onclick="pinPress('7')">7</button>
-        <button class="pin-btn" onclick="pinPress('8')">8</button>
-        <button class="pin-btn" onclick="pinPress('9')">9</button>
-        <button onclick="pinClear()" style="background:#666;min-height:80px;font-size:1.3em;border-radius:16px;">清除</button>
-        <button class="pin-btn" onclick="pinPress('0')">0</button>
-        <button onclick="pinBackspace()" style="background:#666;min-height:80px;font-size:1.3em;border-radius:16px;">⌫</button>
-      </div>
-      <div id="loginError" style="color:#ef4444;font-size:1.1em;min-height:24px;margin-top:10px;"></div>
     </div>
 
-    <!-- 登入模式：Grid (名+emoji) -->
-    <div id="loginGridMode" style="display:none;">
-      <p style="font-size:1.2em;margin:20px 0;">揀你個名</p>
-      <div id="studentGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:500px;margin:20px auto;"></div>
-      <div id="loginError2" style="color:#ef4444;font-size:1.1em;min-height:24px;margin-top:10px;"></div>
+    <!-- Teacher entry — small, unobtrusive, at bottom -->
+    <div style="margin-top:48px;padding-top:24px;border-top:1px solid rgba(255,255,255,0.15);">
+      <button onclick="enterTeacherMode()" style="background:transparent;color:rgba(255,255,255,0.45);font-size:0.9em;padding:10px 20px;min-height:44px;border:1px solid rgba(255,255,255,0.2);border-radius:10px;">🔧 老師模式</button>
     </div>
 
-    <!-- 老師入口 -->
-    <div style="border-top:2px solid rgba(0,0,0,0.1);margin-top:30px;padding-top:20px;">
-      <button onclick="enterTeacherMode()" style="background:#555;font-size:1.05em;padding:12px 28px;min-height:50px;">🔧 老師模式</button>
-    </div>
-
-    <!-- Engine status (download progress for Whisper) -->
-    <div id="engineStatusHome" style="margin-top:20px;font-size:0.9em;color:#666;"></div>
+    <div id="engineStatusHome" style="margin-top:16px;font-size:0.85em;color:rgba(255,255,255,0.4);"></div>
   </div>
 </div>
 
@@ -266,10 +260,6 @@ button:active { transform:scale(0.95); }
         <input id="sm_name" type="text" maxlength="20" style="width:100%;font-size:1.2em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
-        5 位 PIN（留空則無需密碼）
-        <input id="sm_pin" type="text" maxlength="5" inputmode="numeric" pattern="[0-9]{5}" style="width:100%;font-size:1.4em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;font-family:monospace;letter-spacing:4px;text-align:center;">
-      </label>
-      <label style="font-size:1.1em;">
         頭像（揀一個 emoji）
         <div id="sm_emoji_picker" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">
           <!-- populated by JS -->
@@ -314,7 +304,6 @@ let state = {
   // Students + progress (loaded from localStorage at init)
   students: [],
   progress: {},       // { [studentId]: progressObj }
-  loginMode: 'pin',   // 'pin' | 'grid' | 'both'
   // ASR engine selection (pluggable)
   asrEngine: 'webspeech'  // 'webspeech' | 'whisper' | 'custom'
 };
@@ -1267,7 +1256,6 @@ async function init() {
   try {
     const sData = JSON.parse(localStorage.getItem('yueStudents') || '{}');
     state.students = Array.isArray(sData.students) ? sData.students : [];
-    if (sData.loginMode) state.loginMode = sData.loginMode;
   } catch(e) { state.students = []; }
   // Always re-seed a demo student if the list is empty
   // (handles: first run, teacher deleted all, cleared localStorage, v1.0→v1.1 upgrade — never deadlock)
@@ -1275,7 +1263,6 @@ async function init() {
     state.students = [{
       id: 's_demo',
       name: '示範同學',
-      pin: '00000',
       avatar: '🌟',
       color: '#f59e0b',
       createdAt: new Date().toISOString()
@@ -1306,7 +1293,7 @@ async function init() {
     state.currentStudentId = lastStudent;
   }
 
-  _renderLoginMode();
+  _renderStudentGrid();
   updateProgress();
 }
 
@@ -1324,115 +1311,40 @@ function _rebuildWords() {
 }
 
 // ================== LOGIN ==================
-let _pinBuffer = '';
-
-function _renderLoginMode() {
-  const pinMode = document.getElementById('loginPinMode');
-  const gridMode = document.getElementById('loginGridMode');
+// Render the student avatar grid on the home page.
+// Called at init and whenever students change.
+function _renderStudentGrid() {
+  const grid = document.getElementById('studentAvatarGrid');
+  if (!grid) return;
   if (state.students.length === 0) {
-    pinMode.style.display = 'none';
-    gridMode.style.display = 'none';
-    // Show empty hint
-    const home = document.getElementById('home');
-    let hint = document.getElementById('noStudentsHint');
-    if (!hint) {
-      hint = document.createElement('div');
-      hint.id = 'noStudentsHint';
-      hint.style.cssText = 'text-align:center;color:#1a1a2e;font-size:1.1em;margin:20px 0;';
-      hint.innerHTML = '<p>尚未新增任何學生</p><p style="font-size:0.95em;margin-top:10px;">請先撳「老師模式」加入學生</p>';
-      home.querySelector('.home-card').appendChild(hint);
-    }
-    hint.style.display = 'block';
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;color:rgba(255,255,255,0.5);font-size:1.1em;padding:40px 0;">
+      尚未新增任何學生<br><span style="font-size:0.9em;">請先撳「老師模式」加入</span>
+    </div>`;
     return;
   }
-  const hint = document.getElementById('noStudentsHint');
-  if (hint) hint.style.display = 'none';
-
-  const mode = state.loginMode;
-  if (mode === 'pin') {
-    pinMode.style.display = 'block';
-    gridMode.style.display = 'none';
-  } else if (mode === 'grid') {
-    pinMode.style.display = 'none';
-    gridMode.style.display = 'block';
-    _renderStudentGrid();
-  } else { // both — show both, students choose
-    pinMode.style.display = 'block';
-    gridMode.style.display = 'block';
-    _renderStudentGrid();
-  }
-}
-
-function pinPress(digit) {
-  if (_pinBuffer.length >= 5) return;
-  _pinBuffer += digit;
-  _updatePinDisplay();
-  if (_pinBuffer.length === 5) {
-    setTimeout(_tryPinLogin, 200);
-  }
-}
-
-function pinBackspace() {
-  _pinBuffer = _pinBuffer.slice(0, -1);
-  _updatePinDisplay();
-}
-
-function pinClear() {
-  _pinBuffer = '';
-  _updatePinDisplay();
-  document.getElementById('loginError').textContent = '';
-}
-
-function _updatePinDisplay() {
-  const slots = document.querySelectorAll('#pinDisplay .pin-slot');
-  slots.forEach((s, i) => {
-    if (i < _pinBuffer.length) {
-      s.textContent = _pinBuffer[i];
-      s.classList.add('filled');
-    } else {
-      s.textContent = '·';
-      s.classList.remove('filled');
-    }
-  });
-}
-
-function _tryPinLogin() {
-  const errEl = document.getElementById('loginError');
-  errEl.textContent = '';
-  const match = state.students.find(s => s.pin === _pinBuffer);
-  if (match) {
-    _loginStudent(match);
-  } else {
-    errEl.textContent = '❌ PIN 唔啱，再試多次';
-    _pinBuffer = '';
-    _updatePinDisplay();
-  }
-}
-
-function _renderStudentGrid() {
-  const grid = document.getElementById('studentGrid');
+  // 3-col grid on desktop, 2-col on phone (handled by CSS @media)
+  grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
   grid.innerHTML = state.students.map(s => `
-    <div class="student-avatar-card" onclick="quickLoginStudent('${_e(s.id)}')" style="border-color:${_e(s.color || '#f59e0b')};">
-      <span class="student-emoji">${s.avatar || '🌟'}</span>
-      <div style="font-size:1.2em;font-weight:bold;">${_e(s.name)}</div>
+    <div class="student-avatar-card" onclick="selectStudentCard('${_e(s.id)}')" style="border-color:${_e(s.color || '#f59e0b')};">
+      <span style="font-size:3.2em;display:block;line-height:1;">${_e(s.avatar || '🌟')}</span>
+      <div style="font-size:1.2em;font-weight:bold;margin-top:4px;">${_e(s.name)}</div>
     </div>
   `).join('');
 }
 
-function quickLoginStudent(studentId) {
+// "係你嗎？" confirmation step before logging in.
+function selectStudentCard(studentId) {
   const s = state.students.find(x => x.id === studentId);
   if (!s) return;
-  document.getElementById('loginError2').textContent = '';
-  // If PIN set, ask for it; otherwise login directly
-  if (s.pin && s.pin.length === 5) {
-    const input = prompt(`「${s.name}」請輸入你嘅 5 位 PIN：`);
-    if (input === null) return;
-    if (input !== s.pin) {
-      document.getElementById('loginError2').textContent = '❌ PIN 唔啱';
-      return;
-    }
-  }
-  _loginStudent(s);
+  const modal = document.getElementById('confirmCard');
+  document.getElementById('confirmCardEmoji').textContent = s.avatar || '🌟';
+  document.getElementById('confirmCardName').textContent = s.name;
+  document.getElementById('confirmCardYes').onclick = () => { modal.style.display = 'none'; _loginStudent(s); };
+  modal.style.display = 'flex';
+}
+
+function cancelCardLogin() {
+  document.getElementById('confirmCard').style.display = 'none';
 }
 
 function _loginStudent(student) {
@@ -1518,25 +1430,10 @@ function renderTeacherDashboard() {
 
 function renderTeacherStudents() {
   document.getElementById('tchTabStudents').innerHTML = `
-    <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">管理學生帳號、設定 PIN / 頭像、揀登入模式。</p>
-    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-bottom:16px;">
-      <p style="font-weight:bold;color:#f59e0b;margin-bottom:10px;font-size:1.05em;">🔑 登入模式</p>
-      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
-        <input type="radio" name="loginMode" value="pin" onchange="setLoginMode('pin')" style="width:24px;height:24px;accent-color:#f59e0b;">
-        <span>🔢 5 位數字 PIN</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
-        <input type="radio" name="loginMode" value="grid" onchange="setLoginMode('grid')" style="width:24px;height:24px;accent-color:#f59e0b;">
-        <span>🖼 名 + 頭像拼畫</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:10px;margin:8px 0;font-size:1.05em;cursor:pointer;">
-        <input type="radio" name="loginMode" value="both" onchange="setLoginMode('both')" style="width:24px;height:24px;accent-color:#f59e0b;">
-        <span>🔀 兩者皆可（顯示切換）</span>
-      </label>
-    </div>
+    <p style="color:rgba(255,255,255,0.7);font-size:1em;margin-bottom:16px;">管理學生頭像、顏色，同埋匯出 / 匯入全班資料。</p>
     <div id="studentList"></div>
     <button onclick="addNewStudent()" style="margin-top:12px;width:100%;background:#7c3aed;font-size:1.05em;padding:12px;">＋ 新增學生</button>
-    <button onclick="reAddDemoStudent()" style="margin-top:8px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">🌟 加返示範同學 (PIN 00000)</button>
+    <button onclick="reAddDemoStudent()" style="margin-top:8px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">🌟 加返示範同學</button>
     <div style="border-top:2px solid rgba(255,255,255,0.2);margin-top:24px;padding-top:20px;">
       <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">📦 學生資料同進度可匯出 / 匯入，方便跨 iPad 同步。</p>
       <div style="display:flex;gap:8px;">
@@ -1608,7 +1505,6 @@ function addNewStudent(opts) {
   _editingStudent = { studentId: null };
   document.getElementById('studentModalTitle').textContent = '👨‍🎓 新增學生';
   document.getElementById('sm_name').value = opts.seed ? opts.seed.name : '';
-  document.getElementById('sm_pin').value = opts.seed ? (opts.seed.pin || '') : '';
   document.getElementById('sm_color').value = opts.seed ? (opts.seed.color || '#f59e0b') : '#f59e0b';
   _renderEmojiPicker(opts.seed ? opts.seed.avatar : '🌟');
   document.getElementById('studentModal').style.display = 'block';
@@ -1620,7 +1516,6 @@ function editStudent(studentId) {
   _editingStudent = { studentId };
   document.getElementById('studentModalTitle').textContent = '✏️ 編輯學生';
   document.getElementById('sm_name').value = s.name || '';
-  document.getElementById('sm_pin').value = s.pin || '';
   document.getElementById('sm_color').value = s.color || '#f59e0b';
   _renderEmojiPicker(s.avatar || '🌟');
   document.getElementById('studentModal').style.display = 'block';
@@ -1645,21 +1540,19 @@ function selectEmoji(btn, em) {
 function saveStudentFromModal() {
   const name = document.getElementById('sm_name').value.trim();
   if (!name) { alert('請填寫姓名'); return; }
-  const pin = document.getElementById('sm_pin').value.trim();
-  if (pin && !/^\d{5}$/.test(pin)) { alert('PIN 必須係 5 位數字（0-9），或留空'); return; }
   const color = document.getElementById('sm_color').value;
   const avatar = _selectedEmoji;
   if (_editingStudent.studentId === null) {
     const id = 's_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
-    state.students.push({ id, name, pin, color, avatar, createdAt: new Date().toISOString() });
+    state.students.push({ id, name, color, avatar, createdAt: new Date().toISOString() });
   } else {
     const s = state.students.find(x => x.id === _editingStudent.studentId);
-    if (s) { s.name = name; s.pin = pin; s.color = color; s.avatar = avatar; }
+    if (s) { s.name = name; s.color = color; s.avatar = avatar; }
   }
   _persistStudents();
   closeStudentModal();
   renderStudentList();
-  _renderLoginMode();
+  _renderStudentGrid();
   showToast('✅ 學生已儲存');
 }
 
@@ -1695,9 +1588,6 @@ function renderStudentList() {
     return;
   }
   // Sync radio buttons
-  document.querySelectorAll('input[name="loginMode"]').forEach(r => {
-    r.checked = (r.value === state.loginMode);
-  });
   container.innerHTML = state.students.map(s => {
     const prog = state.progress[s.id] || {};
     const attempts = prog.totalAttempts || 0;
@@ -1707,7 +1597,7 @@ function renderStudentList() {
       <div style="flex:1;">
         <div style="font-weight:bold;font-size:1.15em;">${_e(s.name)}${isDemo ? ' <span style="font-size:0.7em;color:rgba(245,158,11,0.8);font-weight:normal;">（預設）</span>' : ''}</div>
         <div style="font-size:0.9em;color:rgba(255,255,255,0.6);">
-          PIN: ${s.pin ? '****' + _e(s.pin.slice(-2)) : '（無）'} • ${attempts} 次練習
+          ${attempts} 次練習
         </div>
       </div>
       <button onclick="editStudent('${_e(s.id)}')" style="background:#0ea5e9;min-height:40px;padding:8px 14px;font-size:0.95em;">✏️</button>
@@ -1729,17 +1619,9 @@ function resetStudentProgress(studentId) {
   });
 }
 
-function setLoginMode(mode) {
-  state.loginMode = mode;
-  _persistStudents();
-  _renderLoginMode();
-  showToast(`登入模式：${mode === 'pin' ? '5位 PIN' : mode === 'grid' ? '拼畫' : '兩者皆可'}`);
-}
-
 function _persistStudents() {
   localStorage.setItem('yueStudents', JSON.stringify({
-    students: state.students,
-    loginMode: state.loginMode
+    students: state.students
   }));
 }
 
@@ -1751,14 +1633,13 @@ function reAddDemoStudent() {
   state.students.unshift({
     id: 's_demo',
     name: '示範同學',
-    pin: '00000',
     avatar: '🌟',
     color: '#f59e0b',
     createdAt: new Date().toISOString()
   });
   _persistStudents();
   renderStudentList();
-  _renderLoginMode();
+  _renderStudentGrid();
   showToast('✅ 示範同學已加返');
 }
 
@@ -2201,7 +2082,7 @@ function renderDashboard() {
       <p style="font-size:1.2em;font-weight:bold;color:#f59e0b;margin-bottom:6px;">未有練習資料</p>
       <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:16px;">鼓勵學生完成第一次評估，呢度就會有圖表</p>
       <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;font-size:0.9em;color:rgba(255,255,255,0.7);">
-        💡 提示：用學生 mode 登入（PIN 00000）做幾次評估，再返嚟睇圖表
+        💡 提示：用學生 mode 撳卡登入做幾次評估，再返嚟睇圖表
       </div>
     </div>`;
   }
@@ -3137,8 +3018,7 @@ function exportStudentsJson() {
     _comment: 'SEN 粵語朗讀 — 學生資料 + 進度',
     _exported_at: new Date().toISOString(),
     students: state.students,
-    progress: state.progress,
-    loginMode: state.loginMode
+    progress: state.progress
   };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -3208,7 +3088,6 @@ function importStudentsJson(event) {
             // else keep local progress
           });
         }
-        if (data.loginMode) state.loginMode = data.loginMode;
         _persistStudents();
         _persistProgress();
         renderStudentList();
