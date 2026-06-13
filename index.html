@@ -45,6 +45,35 @@ button:active { transform:scale(0.95); }
 .student-avatar-card:hover { transform:scale(1.05); }
 .student-avatar-card:active { transform:scale(0.95); }
 .student-emoji { font-size:3em;display:block;margin-bottom:6px; }
+
+/* ===== Responsive: phone portrait / small iPad ===== */
+@media (max-width: 600px) {
+  body { font-size:16px; }
+  .page { padding:12px; padding-top:48px; }  /* leave room for fixed progress bar */
+  /* Shrink the home card top margin so PIN keypad fits */
+  .home-card[style*="margin-top:60px"] { margin-top:20px !important; }
+  h1, h2 { font-size:1.6em; }
+  .home-card, .hub-card, .vocab-card, .result-card { padding:16px; margin:12px auto; border-width:3px; }
+  /* Hub: stack 3 cards vertically on phone */
+  .hub-grid { grid-template-columns:1fr; gap:12px; }
+  .hub-icon { font-size:2.4em; }
+  /* Vocab grid: still auto-fit but allow smaller min so single-column on phone */
+  .vocab-grid { grid-template-columns:1fr; gap:12px; }
+  /* Teacher summary 4-col → 2-col on phone (3-col grids stay — PIN keypad needs 3-col) */
+  .page > div[style*="grid-template-columns:repeat(4,1fr)"] { grid-template-columns:repeat(2,1fr) !important; }
+  /* Touch target enforcement */
+  button, input { min-height:60px; font-size:1.2em; }
+  .pin-slot { width:42px; height:54px; font-size:1.9em; }
+  .pin-btn { min-height:64px; }
+}
+@media (max-width: 380px) {
+  /* Very narrow phone: tighter everything */
+  body { font-size:15px; }
+  .home-card, .hub-card, .vocab-card, .result-card { padding:12px; }
+  .hub-icon { font-size:2em; }
+  .pin-slot { width:36px; height:48px; font-size:1.7em; }
+  .pin-btn { min-height:60px; font-size:1.7em; }
+}
 </style>
 </head>
 <body>
@@ -487,11 +516,6 @@ function updateProgress() {
   }).join('');
 }
 
-function startLearning() {
-  // legacy: just go to login page (no-op after Phase 2)
-  goTo('home');
-}
-
 function updateHubStatus() {
   const done = '<span style="background:#22c55e;color:#fff;padding:4px 12px;border-radius:20px;font-size:0.9em;">✅ 完成</span>';
   const locked = '<span style="background:rgba(255,255,255,0.2);padding:4px 12px;border-radius:20px;font-size:0.9em;">🔓 可選</span>';
@@ -505,7 +529,7 @@ function initVocab() {
   if (state.words.length === 0) {
     grid.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.4em;">
       尚未開啟任何詞彙分類<br>
-      <button onclick="toggleAdminPanel()" style="margin-top:20px;background:#555;font-size:1em;padding:14px 28px;">
+      <button onclick="enterTeacherMode()" style="margin-top:20px;background:#555;font-size:1em;padding:14px 28px;">
         🔧 老師設定
       </button>
     </div>`;
@@ -522,20 +546,27 @@ function initVocab() {
   });
   let html = '';
   Object.keys(cats).forEach(key => {
-    html += `<div style="grid-column:1/-1;margin:10px 0 5px;font-weight:bold;color:#f59e0b;">${key}</div>`;
+    html += `<div style="grid-column:1/-1;margin:10px 0 5px;font-weight:bold;color:#f59e0b;">${_e(key)}</div>`;
     cats[key].forEach(({ w, i }) => {
-      const img = w.image ? `<img src="assets/images/${w.image}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;">` : '';
+      const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:120px;height:120px;object-fit:cover;border-radius:12px;margin:8px auto;display:block;border:2px solid #f59e0b;">` : '';
       html += `
-    <div class="vocab-card" onclick="practiceWord(${i})">
+    <div class="vocab-card" data-practice-idx="${i}">
       ${img}
-      <div class="vocab-char">${w.char}</div>
-      <div class="vocab-pinyin">${w.pinyin}</div>
-      <div style="color:#666;font-size:1.1em;">${w.meaning}</div>
-      <button onclick="event.stopImmediatePropagation();speak('${w.char}');" style="margin-top:16px;background:#7c3aed;">🔊 聽發音</button>
+      <div class="vocab-char">${_e(w.char)}</div>
+      <div class="vocab-pinyin">${_e(w.pinyin)}</div>
+      <div style="color:#666;font-size:1.1em;">${_e(w.meaning)}</div>
+      <button class="speak-btn" data-speak="${_e(w.char)}" style="margin-top:16px;background:#7c3aed;">🔊 聽發音</button>
     </div>`;
     });
   });
   grid.innerHTML = html;
+  // Event delegation (replaces inline onclick — also XSS-safe for user-imported words)
+  grid.onclick = (e) => {
+    const speakBtn = e.target.closest('.speak-btn');
+    if (speakBtn) { e.stopPropagation(); speak(speakBtn.dataset.speak); return; }
+    const card = e.target.closest('.vocab-card');
+    if (card) { practiceWord(parseInt(card.dataset.practiceIdx, 10)); }
+  };
   state.completed.vocab = true;
   updateHubStatus();
 }
@@ -558,7 +589,7 @@ function showCategorySelector() {
   if (cats.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.3em;">
       尚未開啟任何詞彙分類<br>請先到老師設定開啟分類
-      <button onclick="toggleAdminPanel()" style="margin-top:16px;background:#555;font-size:1em;padding:12px 24px;">🔧 老師設定</button>
+      <button onclick="enterTeacherMode()" style="margin-top:16px;background:#555;font-size:1em;padding:12px 24px;">🔧 老師設定</button>
       <br><button onclick="goTo('hub')" style="margin-top:12px;background:#666;font-size:1em;padding:12px 24px;">返回</button>
     </div>`;
     goTo('assessment');
@@ -623,41 +654,23 @@ function renderFilteredAssessment() {
   }
   const w = state.filteredWords[state.assessmentIndex];
   state.currentWord = w;
-  const img = w.image ? `<img src="assets/images/${w.image}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
+  const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
   container.innerHTML = `
     <div class="vocab-card" style="margin-bottom:30px;">
       ${img}
-      <div class="vocab-char">${w.char}</div>
-      <div class="vocab-pinyin">${w.pinyin}</div>
-      <div style="margin:12px 0;color:#666;">${w.meaning}</div>
-      <button onclick="speak('${w.char}')" style="background:#7c3aed;width:100%;">🔊 聽正確發音</button>
+      <div class="vocab-char">${_e(w.char)}</div>
+      <div class="vocab-pinyin">${_e(w.pinyin)}</div>
+      <div style="margin:12px 0;color:#666;">${_e(w.meaning)}</div>
+      <button class="speak-btn" data-speak="${_e(w.char)}" style="background:#7c3aed;width:100%;">🔊 聽正確發音</button>
     </div>
     <button class="record-btn" onclick="startRecording()">🎤 開始朗讀（點擊錄音）</button>
     <div id="recordingStatus" style="text-align:center;margin-top:20px;font-size:1.3em;color:#f59e0b;"></div>
   `;
-}
-
-function renderAssessment() {
-  const container = document.getElementById('assessmentContent');
-  const wordsToUse = state.filteredWords || state.words;
-  if (state.assessmentIndex >= wordsToUse.length) {
-    finishAll();
-    return;
-  }
-  const w = wordsToUse[state.assessmentIndex];
-  state.currentWord = w;
-  const img = w.image ? `<img src="assets/images/${w.image}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;">` : '';
-  container.innerHTML = `
-    <div class="vocab-card" style="margin-bottom:30px;">
-      ${img}
-      <div class="vocab-char">${w.char}</div>
-      <div class="vocab-pinyin">${w.pinyin}</div>
-      <div style="margin:12px 0;color:#666;">${w.meaning}</div>
-      <button onclick="speak('${w.char}')" style="background:#7c3aed;width:100%;">🔊 聽正確發音</button>
-    </div>
-    <button class="record-btn" onclick="startRecording()">🎤 開始朗讀（點擊錄音）</button>
-    <div id="recordingStatus" style="text-align:center;margin-top:20px;font-size:1.3em;color:#f59e0b;"></div>
-  `;
+  // Event delegation for speak button (XSS-safe for imported words)
+  container.querySelector('.speak-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    speak(e.currentTarget.dataset.speak);
+  });
 }
 
 let recognition;
@@ -924,22 +937,17 @@ function editDistance(a, b) {
 function nextAssessment() {
   state.assessmentIndex++;
   goTo('assessment');
-  if (state.filteredWords) {
-    renderFilteredAssessment();
-  } else {
-    renderAssessment();
-  }
+  // filteredWords is set by startFilteredAssessment; fall back to all words for legacy path.
+  if (!state.filteredWords) state.filteredWords = state.words;
+  renderFilteredAssessment();
 }
 
 function retryCurrentWord() {
   // Re-attempt the same word without advancing index.
   // _recordAttempt will be called again on next scorePronunciation.
   goTo('assessment');
-  if (state.filteredWords) {
-    renderFilteredAssessment();
-  } else {
-    renderAssessment();
-  }
+  if (!state.filteredWords) state.filteredWords = state.words;
+  renderFilteredAssessment();
 }
 
 function finishAll() {
@@ -1081,12 +1089,6 @@ function showConfetti(count) {
 const style = document.createElement('style');
 style.textContent = `@keyframes fall { to { transform:translateY(100vh) rotate(720deg); opacity:0; } }`;
 document.head.appendChild(style);
-
-function showTeacherRecords() {
-  // legacy: redirect to dashboard
-  switchAdminTab('dashboard');
-  toggleAdminPanel();
-}
 
 // ================== STUDENT "MY PROGRESS" PAGE (visual, low-text) ==================
 // Designed for SEN students: minimal text, maximum visual cues (emoji + colors + icons)
@@ -2981,7 +2983,7 @@ function showStudentDetail(studentId, focusWord) {
   html += `</div>
     <div style="display:flex;gap:8px;margin-top:20px;">
       <button onclick="exportStudentReport('${studentId}')" style="flex:1;background:#f59e0b;font-size:1em;padding:12px;">📄 匯出 PDF 報告</button>
-      <button onclick="renderDashboard();switchAdminTab('dashboard');" style="flex:1;background:#666;font-size:1em;padding:12px;">返回 Dashboard</button>
+      <button onclick="renderDashboard();tchSwitchTab('dashboard');" style="flex:1;background:#666;font-size:1em;padding:12px;">返回 Dashboard</button>
     </div>
   </div>`;
   document.getElementById('dashboardContent').innerHTML = html;
@@ -3222,21 +3224,6 @@ function importStudentsJson(event) {
   reader.readAsText(file);
 }
 
-// Admin panel
-function toggleAdminPanel() {
-  const panel = document.getElementById('adminPanel');
-  const arrow = document.getElementById('adminArrow');
-  const isHidden = panel.style.display === 'none';
-  panel.style.display = isHidden ? 'block' : 'none';
-  arrow.textContent = isHidden ? '▲' : '▼';
-  if (isHidden) {
-    renderAdminCategoryList();
-  } else {
-    // Panel is being closed — discard any unsaved toggles
-    _pendingCatToggles = {};
-  }
-}
-
 function renderAdminCategoryList() {
   const container = document.getElementById('adminCategoryList');
   if (state.categories.length === 0) {
@@ -3284,30 +3271,6 @@ function saveAdminSettings() {
 let _editingWord = null; // { catId, wordIndex } | null
 let _editingCatId = null;
 let _confirmCallback = null;
-
-function switchAdminTab(tab) {
-  // Discard any unsaved category toggles when switching tabs
-  _pendingCatToggles = {};
-  const tabs = [
-    { btn: 'tabSettingsBtn', content: 'tabSettingsContent' },
-    { btn: 'tabEditBtn', content: 'tabEditContent' },
-    { btn: 'tabStudentsBtn', content: 'tabStudentsContent' },
-    { btn: 'tabDashboardBtn', content: 'tabDashboardContent' },
-    { btn: 'tabSystemBtn', content: 'tabSystemContent' }
-  ];
-  const activeBtn = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Btn';
-  const activeContent = 'tab' + tab.charAt(0).toUpperCase() + tab.slice(1) + 'Content';
-  tabs.forEach(t => {
-    const btn = document.getElementById(t.btn);
-    const content = document.getElementById(t.content);
-    if (btn) btn.style.background = (t.btn === activeBtn) ? '#7c3aed' : '#444';
-    if (content) content.style.display = (t.content === activeContent) ? 'block' : 'none';
-  });
-  if (tab === 'edit') renderEditCategoryList();
-  if (tab === 'students') renderStudentList();
-  if (tab === 'dashboard') renderDashboard();
-  if (tab === 'system') renderAsrEngineList();
-}
 
 function renderEditCategoryList() {
   const container = document.getElementById('editCategoryList');
