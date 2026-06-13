@@ -1731,7 +1731,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.3';
+const _DEMO_SEED_VERSION = 'v1.1.4';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
@@ -1758,12 +1758,16 @@ function _seedDemoProgress() {
   const day = 86400000;
   if (state.students.length === 1 && state.students[0].id === 's_demo') {
     const extras = [
-      { id: 's_sarah', name: '曉怡', pin: '11111', avatar: '🌸', color: '#ec4899',
+      { id: 's_student1', name: '學生1', pin: '11111', avatar: '🌸', color: '#ec4899',
         createdAt: new Date(now - 32*day).toISOString() },
-      { id: 's_tommy', name: '俊軒', pin: '22222', avatar: '🚀', color: '#3b82f6',
+      { id: 's_student2', name: '學生2', pin: '22222', avatar: '🚀', color: '#3b82f6',
         createdAt: new Date(now - 28*day).toISOString() },
-      { id: 's_amy',   name: '心悅', pin: '33333', avatar: '🦋', color: '#a855f7',
+      { id: 's_student3', name: '學生3', pin: '33333', avatar: '🦋', color: '#a855f7',
         createdAt: new Date(now - 21*day).toISOString() },
+      { id: 's_student4', name: '學生4', pin: '44444', avatar: '🐱', color: '#10b981',
+        createdAt: new Date(now - 18*day).toISOString() },
+      { id: 's_student5', name: '學生5', pin: '55555', avatar: '🦉', color: '#f59e0b',
+        createdAt: new Date(now - 14*day).toISOString() },
     ];
     state.students = [...state.students, ...extras];
     _persistStudents();
@@ -1775,10 +1779,12 @@ function _seedDemoProgress() {
   // recentStreak = force this many consecutive recent days to each have ≥1 attempt (for 🔥 badge)
   // lowEngagement = student who falls behind (trigger engagement alert)
   const profileById = {
-    's_demo':  { avgBase: 68, variance: 22, attempts: 32, mastery: 0.55, recentRatio: 0.55, recentStreak: 2 },
-    's_sarah': { avgBase: 88, variance: 8,  attempts: 46, mastery: 0.85, recentRatio: 0.70, recentStreak: 5 },
-    's_tommy': { avgBase: 48, variance: 24, attempts: 24, mastery: 0.40, recentRatio: 0.12, lowEngagement: true },
-    's_amy':   { avgBase: 74, variance: 14, attempts: 38, mastery: 0.70, recentRatio: 0.60, recentStreak: 3 },
+    's_demo':     { avgBase: 68, variance: 22, attempts: 32, mastery: 0.55, recentRatio: 0.55, recentStreak: 2 },
+    's_student1': { avgBase: 88, variance: 8,  attempts: 46, mastery: 0.85, recentRatio: 0.70, recentStreak: 5 },
+    's_student2': { avgBase: 48, variance: 24, attempts: 24, mastery: 0.40, recentRatio: 0.12, lowEngagement: true },
+    's_student3': { avgBase: 74, variance: 14, attempts: 38, mastery: 0.70, recentRatio: 0.60, recentStreak: 3 },
+    's_student4': { avgBase: 62, variance: 16, attempts: 30, mastery: 0.60, recentRatio: 0.50, recentStreak: 1 },
+    's_student5': { avgBase: 78, variance: 12, attempts: 42, mastery: 0.75, recentRatio: 0.65, recentStreak: 4 },
   };
 
   state.students.forEach((s) => {
