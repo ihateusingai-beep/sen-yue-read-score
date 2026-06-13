@@ -200,7 +200,7 @@ button:active { transform:scale(0.95); }
     <h3 id="wordModalTitle" style="color:#f59e0b;text-align:center;margin-bottom:20px;">✏️ 編輯詞彙</h3>
     <div style="display:flex;flex-direction:column;gap:14px;">
       <label style="font-size:1.1em;">
-        字符 <span style="color:#ef4444;">*</span>
+        字元 <span style="color:#ef4444;">*</span>
         <input id="wm_char" type="text" maxlength="20" style="width:100%;font-size:1.2em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
@@ -212,7 +212,7 @@ button:active { transform:scale(0.95); }
         <input id="wm_meaning" type="text" maxlength="100" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
-        朗讀目標（空白則用字符）
+        朗讀目標（空白則用字元）
         <input id="wm_target" type="text" maxlength="50" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
@@ -383,7 +383,7 @@ const _ASR_ENGINES = {
   custom: {
     id: 'custom',
     name: '自訂比對（聲紋 + pattern）',
-    description: '純本地，唔上傳任何嘢',
+    description: '純本地，唔上載任何嘢',
     costEmoji: '🆓',
     privacyEmoji: '🔒',
     isAvailable() { return typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined'; },
@@ -1830,14 +1830,14 @@ function _seedDemoProgress() {
 // Manual re-seed: wipes yueProgress + yueSeededDemo, then re-runs auto-seed.
 // Confirm before destroying any real user data.
 function _reseedDemoProgress() {
-  const msg = '確定要重設示範數據？\n\n呢個會清除現時所有學生嘅練習記錄，重新生成 14 日嘅示範數據。\n（你之前加嘅學生名單會保留）';
+  const msg = '確定要重設示範資料？\n\n呢個會清除現時所有學生嘅練習記錄，重新生成 14 日嘅示範資料。\n（你之前加嘅學生名單會保留）';
   if (!confirm(msg)) return;
   state.progress = {};
   localStorage.removeItem('yueProgress');
   localStorage.removeItem(_DEMO_SEED_KEY);
   _seedDemoProgress();
   renderDashboard();
-  showToast('✅ 已重設示範數據');
+  showToast('✅ 已重設示範資料');
 }
 
 // ================== ASR ENGINE UI ==================
@@ -2117,7 +2117,7 @@ function renderDashboard() {
   if (totalAttempts === 0) {
     html += `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.2));border:2px dashed rgba(245,158,11,0.5);border-radius:16px;padding:30px 20px;margin-bottom:16px;text-align:center;">
       <img src="assets/images/decorative/empty-mic.png" alt="" style="width:140px;height:140px;margin:0 auto 8px;display:block;">
-      <p style="font-size:1.2em;font-weight:bold;color:#f59e0b;margin-bottom:6px;">未有練習數據</p>
+      <p style="font-size:1.2em;font-weight:bold;color:#f59e0b;margin-bottom:6px;">未有練習資料</p>
       <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:16px;">鼓勵學生完成第一次評估，呢度就會有圖表</p>
       <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;font-size:0.9em;color:rgba(255,255,255,0.7);">
         💡 提示：用學生 mode 登入（PIN 00000）做幾次評估，再返嚟睇圖表
@@ -2358,7 +2358,7 @@ function renderDashboard() {
   // Shown only if demo data has been seeded; lets teacher refresh sample data
   if (localStorage.getItem(_DEMO_SEED_KEY) === _DEMO_SEED_VERSION) {
     html += `<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.15);">
-      <button onclick="_reseedDemoProgress()" style="background:transparent;color:rgba(255,255,255,0.5);font-size:0.85em;padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">🧪 重設示範數據</button>
+      <button onclick="_reseedDemoProgress()" style="background:transparent;color:rgba(255,255,255,0.5);font-size:0.85em;padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">🧪 重設示範資料</button>
     </div>`;
   }
 
@@ -2530,7 +2530,7 @@ function _renderSessionDots(scores, n) {
   for (const s of recent) padded.push(s);
   const dots = padded.map((s, i) => {
     if (s === null) {
-      return `<span title="第 ${i+1} 次：未有數據" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);margin:0 1px;vertical-align:middle;"></span>`;
+      return `<span title="第 ${i+1} 次：未有資料" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);margin:0 1px;vertical-align:middle;"></span>`;
     }
     const c = s.score >= 80 ? '#22c55e' : s.score >= 60 ? '#f59e0b' : '#ef4444';
     const word = s.word || '';
@@ -2667,7 +2667,7 @@ function _renderLineChart(dailyData, options) {
   const chartH = height - padTop - padBot;
 
   if (!dailyData || dailyData.length === 0) {
-    return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;"><text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無數據</text></svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;"><text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無資料</text></svg>`;
   }
 
   // Y-axis grid lines at 0, 50, 100
@@ -2712,7 +2712,7 @@ function _renderPieChart(slices) {
   const cx = 80, cy = 80, r = 70;
   let html = `<svg viewBox="0 0 280 160" style="width:100%;height:160px;">`;
   if (total === 0) {
-    html += `<text x="80" y="80" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無數據</text>`;
+    html += `<text x="80" y="80" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無資料</text>`;
   } else {
     let angle = -Math.PI / 2;
     slices.forEach(slice => {
@@ -3022,7 +3022,7 @@ function exportClassReport() {
       </tbody>
     </table>
     <h2>🎯 全班詞彙難點 Top ${Math.min(10, weakSpots.length)}</h2>
-    ${weakSpots.length === 0 ? '<p>無數據</p>' : `
+    ${weakSpots.length === 0 ? '<p>無資料</p>' : `
     <table>
       <thead><tr><th>詞彙</th><th>全班平均分</th><th>練習次數</th><th>難度</th></tr></thead>
       <tbody>
@@ -3239,7 +3239,7 @@ function saveWordFromModal() {
   if (!_editingWord) return;
   const charVal = document.getElementById('wm_char').value.trim();
   if (!charVal) {
-    alert('請填寫字符');
+    alert('請填寫字元');
     return;
   }
   const cat = state.categories.find(c => c.id === _editingWord.catId);
