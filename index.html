@@ -200,7 +200,7 @@ button:active { transform:scale(0.95); }
     <h3 id="wordModalTitle" style="color:#f59e0b;text-align:center;margin-bottom:20px;">✏️ 編輯詞彙</h3>
     <div style="display:flex;flex-direction:column;gap:14px;">
       <label style="font-size:1.1em;">
-        字符 <span style="color:#ef4444;">*</span>
+        字元 <span style="color:#ef4444;">*</span>
         <input id="wm_char" type="text" maxlength="20" style="width:100%;font-size:1.2em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
@@ -212,7 +212,7 @@ button:active { transform:scale(0.95); }
         <input id="wm_meaning" type="text" maxlength="100" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
-        朗讀目標（空白則用字符）
+        朗讀目標（空白則用字元）
         <input id="wm_target" type="text" maxlength="50" style="width:100%;font-size:1.1em;padding:12px;border-radius:10px;border:2px solid #555;background:#222;color:#fff;">
       </label>
       <label style="font-size:1.1em;">
@@ -275,7 +275,6 @@ let state = {
   mode: 'student',  // 'student' | 'teacher'
   currentStudentId: null,
   currentWord: null,
-  score: 0,
   completed: { vocab: false, assessment: false },
   autoTTS: true,
   categories: [],
@@ -290,6 +289,18 @@ let state = {
   // ASR engine selection (pluggable)
   asrEngine: 'webspeech'  // 'webspeech' | 'whisper' | 'custom'
 };
+
+// ================== SECURITY ==================
+// Escape HTML special chars — use this for ALL user content injected into innerHTML.
+function _e(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // ================== ASR ENGINE LAYER ==================
 // Each engine implements: { id, name, transcribe(audioBlob?) → Promise<{text, confidence, raw}>, isAvailable() }
@@ -383,7 +394,7 @@ const _ASR_ENGINES = {
   custom: {
     id: 'custom',
     name: '自訂比對（聲紋 + pattern）',
-    description: '純本地，唔上傳任何嘢',
+    description: '純本地，唔上載任何嘢',
     costEmoji: '🆓',
     privacyEmoji: '🔒',
     isAvailable() { return typeof AudioContext !== 'undefined' || typeof webkitAudioContext !== 'undefined'; },
@@ -683,7 +694,7 @@ function startRecording() {
 
     recognition.onresult = (event) => {
       const transcript = event.results[0][0].transcript.trim();
-      status.innerHTML = `你講咗：${transcript}`;
+      status.innerHTML = `你講咗：${_e(transcript)}`;
       scorePronunciation(transcript);
     };
     recognition.onerror = (event) => {
@@ -721,7 +732,7 @@ function startRecording() {
           });
           // If engine returned text, score it. If empty (mock/whisper not implemented), fall back.
           if (result.text) {
-            status.innerHTML = `你講咗：${result.text}`;
+            status.innerHTML = `你講咗：${_e(result.text)}`;
             scorePronunciation(result.text, { engine: engine.id, audioBlob: blob, raw: result.raw });
           } else {
             // Engine returned no text (e.g. whisper local not yet implemented, or custom mode)
@@ -757,7 +768,7 @@ function _promptManualInput(status, word) {
     status.innerHTML = '已取消';
     return;
   }
-  status.innerHTML = `你講咗：${txt}`;
+  status.innerHTML = `你講咗：${_e(txt)}`;
   scorePronunciation(txt, { engine: 'manual' });
 }
 
@@ -866,7 +877,6 @@ function scorePronunciation(transcript, opts) {
 
   state.assessmentScores.push({ word: w.char, score: aiScore, transcript, engine: opts.engine || state.asrEngine, method: scoringMethod });
   _recordAttempt(w.char, aiScore, transcript);
-  state.score += aiScore;
 
   // show result
   document.getElementById('assessmentContent').innerHTML = '';
@@ -874,7 +884,7 @@ function scorePronunciation(transcript, opts) {
   document.getElementById('resultWord').textContent = w.char;
   document.getElementById('resultScore').textContent = aiScore + '/100';
   document.getElementById('resultFeedback').textContent = feedback;
-  document.getElementById('resultAI').innerHTML = `AI 評分：${aiScore}分<br>你講：${transcript || '（自訂模式）'}<br>正確：${target}<br><span style="font-size:0.85em;color:#7c3aed;">引擎：${(opts.engine || state.asrEngine)}｜方法：${scoringMethod}</span>`;
+  document.getElementById('resultAI').innerHTML = `AI 評分：${aiScore}分<br>你講：${_e(transcript || '（自訂模式）')}<br>正確：${_e(target)}<br><span style="font-size:0.85em;color:#7c3aed;">引擎：${_e(opts.engine || state.asrEngine)}｜方法：${_e(scoringMethod)}</span>`;
   
   if (aiScore >= 80) {
     showConfetti(12);
@@ -1371,9 +1381,9 @@ function _tryPinLogin() {
 function _renderStudentGrid() {
   const grid = document.getElementById('studentGrid');
   grid.innerHTML = state.students.map(s => `
-    <div class="student-avatar-card" onclick="quickLoginStudent('${s.id}')" style="border-color:${s.color || '#f59e0b'};">
+    <div class="student-avatar-card" onclick="quickLoginStudent('${_e(s.id)}')" style="border-color:${_e(s.color || '#f59e0b')};">
       <span class="student-emoji">${s.avatar || '🌟'}</span>
-      <div style="font-size:1.2em;font-weight:bold;">${s.name}</div>
+      <div style="font-size:1.2em;font-weight:bold;">${_e(s.name)}</div>
     </div>
   `).join('');
 }
@@ -1624,14 +1634,14 @@ function renderStudentList() {
     return `<div style="display:flex;align-items:center;gap:10px;background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;margin:8px 0;border-left:6px solid ${s.color || '#f59e0b'};">
       <span style="font-size:2em;">${s.avatar || '🌟'}</span>
       <div style="flex:1;">
-        <div style="font-weight:bold;font-size:1.15em;">${s.name}${isDemo ? ' <span style="font-size:0.7em;color:rgba(245,158,11,0.8);font-weight:normal;">（預設）</span>' : ''}</div>
+        <div style="font-weight:bold;font-size:1.15em;">${_e(s.name)}${isDemo ? ' <span style="font-size:0.7em;color:rgba(245,158,11,0.8);font-weight:normal;">（預設）</span>' : ''}</div>
         <div style="font-size:0.9em;color:rgba(255,255,255,0.6);">
-          PIN: ${s.pin ? '****' + s.pin.slice(-2) : '（無）'} • ${attempts} 次練習
+          PIN: ${s.pin ? '****' + _e(s.pin.slice(-2)) : '（無）'} • ${attempts} 次練習
         </div>
       </div>
-      <button onclick="editStudent('${s.id}')" style="background:#0ea5e9;min-height:40px;padding:8px 14px;font-size:0.95em;">✏️</button>
-      <button onclick="resetStudentProgress('${s.id}')" style="background:#f59e0b;min-height:40px;padding:8px 14px;font-size:0.95em;">🔄</button>
-      ${isDemo ? '<button disabled title="預設學生，重新整理頁面會自動恢復" style="background:#666;opacity:0.4;min-height:40px;padding:8px 14px;font-size:0.95em;cursor:not-allowed;">🗑</button>' : `<button onclick="deleteStudent('${s.id}')" style="background:#dc2626;min-height:40px;padding:8px 14px;font-size:0.95em;">🗑</button>`}
+      <button onclick="editStudent('${_e(s.id)}')" style="background:#0ea5e9;min-height:40px;padding:8px 14px;font-size:0.95em;">✏️</button>
+      <button onclick="resetStudentProgress('${_e(s.id)}')" style="background:#f59e0b;min-height:40px;padding:8px 14px;font-size:0.95em;">🔄</button>
+      ${isDemo ? '<button disabled title="預設學生，重新整理頁面會自動恢復" style="background:#666;opacity:0.4;min-height:40px;padding:8px 14px;font-size:0.95em;cursor:not-allowed;">🗑</button>' : `<button onclick="deleteStudent('${_e(s.id)}')" style="background:#dc2626;min-height:40px;padding:8px 14px;font-size:0.95em;">🗑</button>`}
     </div>`;
   }).join('');
 }
@@ -1772,7 +1782,7 @@ function _seedDemoProgress() {
         const at = new Date(ts).toISOString();
         prog.scores.push({ word: w.char, score, at });
         const key = w.char;
-        if (!prog.byWord[key]) prog.byWord[key] = { bestScore: 0, attempts: 0, lastAt: null };
+        if (!prog.byWord[key]) prog.byWord[key] = { bestScore: 0, attempts: 0, lastTry: null, lastAt: null, history: [] };
         if (score > prog.byWord[key].bestScore) prog.byWord[key].bestScore = score;
         prog.byWord[key].attempts += 1;
         if (!prog.byWord[key].lastAt || at > prog.byWord[key].lastAt) prog.byWord[key].lastAt = at;
@@ -1809,7 +1819,7 @@ function _seedDemoProgress() {
 
       const key = w.char;
       if (!prog.byWord[key]) {
-        prog.byWord[key] = { bestScore: 0, attempts: 0, lastAt: null };
+        prog.byWord[key] = { bestScore: 0, attempts: 0, lastTry: null, lastAt: null, history: [] };
       }
       if (score > prog.byWord[key].bestScore) prog.byWord[key].bestScore = score;
       prog.byWord[key].attempts += 1;
@@ -1830,14 +1840,14 @@ function _seedDemoProgress() {
 // Manual re-seed: wipes yueProgress + yueSeededDemo, then re-runs auto-seed.
 // Confirm before destroying any real user data.
 function _reseedDemoProgress() {
-  const msg = '確定要重設示範數據？\n\n呢個會清除現時所有學生嘅練習記錄，重新生成 14 日嘅示範數據。\n（你之前加嘅學生名單會保留）';
+  const msg = '確定要重設示範資料？\n\n呢個會清除現時所有學生嘅練習記錄，重新生成 14 日嘅示範資料。\n（你之前加嘅學生名單會保留）';
   if (!confirm(msg)) return;
   state.progress = {};
   localStorage.removeItem('yueProgress');
   localStorage.removeItem(_DEMO_SEED_KEY);
   _seedDemoProgress();
   renderDashboard();
-  showToast('✅ 已重設示範數據');
+  showToast('✅ 已重設示範資料');
 }
 
 // ================== ASR ENGINE UI ==================
@@ -2117,7 +2127,7 @@ function renderDashboard() {
   if (totalAttempts === 0) {
     html += `<div style="background:linear-gradient(135deg,rgba(124,58,237,0.2),rgba(245,158,11,0.2));border:2px dashed rgba(245,158,11,0.5);border-radius:16px;padding:30px 20px;margin-bottom:16px;text-align:center;">
       <img src="assets/images/decorative/empty-mic.png" alt="" style="width:140px;height:140px;margin:0 auto 8px;display:block;">
-      <p style="font-size:1.2em;font-weight:bold;color:#f59e0b;margin-bottom:6px;">未有練習數據</p>
+      <p style="font-size:1.2em;font-weight:bold;color:#f59e0b;margin-bottom:6px;">未有練習資料</p>
       <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:16px;">鼓勵學生完成第一次評估，呢度就會有圖表</p>
       <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:12px;font-size:0.9em;color:rgba(255,255,255,0.7);">
         💡 提示：用學生 mode 登入（PIN 00000）做幾次評估，再返嚟睇圖表
@@ -2325,10 +2335,10 @@ function renderDashboard() {
     const streakBadge = streak >= 2
       ? `<span title="連續 ${streak} 日練習" style="background:linear-gradient(135deg,rgba(239,68,68,0.3),rgba(245,158,11,0.3));padding:2px 8px;border-radius:12px;font-size:0.85em;font-weight:bold;border:1px solid rgba(239,68,68,0.4);">🔥${streak}</span>`
       : '';
-    return `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:10px 0;border-left:6px solid ${s.color || '#f59e0b'};">
+    return `<div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin:10px 0;border-left:6px solid ${_e(s.color || '#f59e0b')};">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
         <span style="font-size:1.8em;">${s.avatar || '🌟'}</span>
-        <span style="font-weight:bold;font-size:1.2em;flex:1;">${s.name}</span>
+        <span style="font-weight:bold;font-size:1.2em;flex:1;">${_e(s.name)}</span>
         <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${attempts} 次</span>
         ${streakBadge}
         <span style="color:${trendColor};font-size:1em;font-weight:bold;">${trendLabel}</span>
@@ -2343,8 +2353,8 @@ function renderDashboard() {
       </div>
       <div style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-top:6px;">最後練習：${lastSession}</div>
       <div style="display:flex;gap:6px;margin-top:8px;">
-        <button onclick="showStudentDetail('${s.id}')" style="flex:1;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:42px;">📋 詳細</button>
-        <button onclick="exportStudentReport('${s.id}')" style="flex:1;background:#f59e0b;font-size:0.95em;padding:10px;min-height:42px;">📄 報告</button>
+        <button onclick="showStudentDetail('${_e(s.id)}')" style="flex:1;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:42px;">📋 詳細</button>
+        <button onclick="exportStudentReport('${_e(s.id)}')" style="flex:1;background:#f59e0b;font-size:0.95em;padding:10px;min-height:42px;">📄 報告</button>
       </div>
     </div>`;
   }).join('');
@@ -2358,7 +2368,7 @@ function renderDashboard() {
   // Shown only if demo data has been seeded; lets teacher refresh sample data
   if (localStorage.getItem(_DEMO_SEED_KEY) === _DEMO_SEED_VERSION) {
     html += `<div style="text-align:center;margin-top:14px;padding-top:12px;border-top:1px dashed rgba(255,255,255,0.15);">
-      <button onclick="_reseedDemoProgress()" style="background:transparent;color:rgba(255,255,255,0.5);font-size:0.85em;padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">🧪 重設示範數據</button>
+      <button onclick="_reseedDemoProgress()" style="background:transparent;color:rgba(255,255,255,0.5);font-size:0.85em;padding:6px 12px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;">🧪 重設示範資料</button>
     </div>`;
   }
 
@@ -2494,7 +2504,7 @@ function _buildAlerts(allScores) {
   });
   Object.entries(wordFail).forEach(([w, info]) => {
     if (info.total >= 2 && info.fail / info.total >= 0.5) {
-      alerts.push(`📌 <b>${w}</b>：${info.fail}/${info.total} 學生 &lt; 50 分（建議全班重溫）`);
+      alerts.push(`📌 <b>${_e(w)}</b>：${info.fail}/${info.total} 學生 &lt; 50 分（建議全班重溫）`);
     }
   });
   return alerts.slice(0, 8);
@@ -2530,7 +2540,7 @@ function _renderSessionDots(scores, n) {
   for (const s of recent) padded.push(s);
   const dots = padded.map((s, i) => {
     if (s === null) {
-      return `<span title="第 ${i+1} 次：未有數據" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);margin:0 1px;vertical-align:middle;"></span>`;
+      return `<span title="第 ${i+1} 次：未有資料" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);margin:0 1px;vertical-align:middle;"></span>`;
     }
     const c = s.score >= 80 ? '#22c55e' : s.score >= 60 ? '#f59e0b' : '#ef4444';
     const word = s.word || '';
@@ -2667,7 +2677,7 @@ function _renderLineChart(dailyData, options) {
   const chartH = height - padTop - padBot;
 
   if (!dailyData || dailyData.length === 0) {
-    return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;"><text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無數據</text></svg>`;
+    return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:${height}px;"><text x="${width/2}" y="${height/2}" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無資料</text></svg>`;
   }
 
   // Y-axis grid lines at 0, 50, 100
@@ -2712,7 +2722,7 @@ function _renderPieChart(slices) {
   const cx = 80, cy = 80, r = 70;
   let html = `<svg viewBox="0 0 280 160" style="width:100%;height:160px;">`;
   if (total === 0) {
-    html += `<text x="80" y="80" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無數據</text>`;
+    html += `<text x="80" y="80" text-anchor="middle" font-size="11" fill="rgba(255,255,255,0.4)">無資料</text>`;
   } else {
     let angle = -Math.PI / 2;
     slices.forEach(slice => {
@@ -3017,18 +3027,18 @@ function exportClassReport() {
           const mastered = Object.values(p.byWord || {}).filter(w => w.bestScore >= 80).length;
           const struggling = Object.values(p.byWord || {}).filter(w => w.attempts >= 2 && w.bestScore < 60).length;
           const last = p.lastSession ? new Date(p.lastSession).toLocaleString('zh-HK', { month:'numeric', day:'numeric' }) : '—';
-          return `<tr class="student-row"><td>${s.avatar || '🌟'} ${s.name}</td><td>${p.totalAttempts || 0}</td><td>${avg}</td><td>${mastered}</td><td>${struggling}</td><td>${last}</td></tr>`;
+          return `<tr class="student-row"><td>${s.avatar || '🌟'} ${_e(s.name)}</td><td>${p.totalAttempts || 0}</td><td>${avg}</td><td>${mastered}</td><td>${struggling}</td><td>${last}</td></tr>`;
         }).join('')}
       </tbody>
     </table>
     <h2>🎯 全班詞彙難點 Top ${Math.min(10, weakSpots.length)}</h2>
-    ${weakSpots.length === 0 ? '<p>無數據</p>' : `
+    ${weakSpots.length === 0 ? '<p>無資料</p>' : `
     <table>
       <thead><tr><th>詞彙</th><th>全班平均分</th><th>練習次數</th><th>難度</th></tr></thead>
       <tbody>
         ${weakSpots.slice(0, 10).map(w => {
           const difficulty = w.avg < 50 ? '🔴 困難' : w.avg < 70 ? '🟡 中等' : '🟢 容易';
-          return `<tr><td><b>${w.word}</b></td><td>${w.avg} 分</td><td>${w.count}</td><td>${difficulty}</td></tr>`;
+          return `<tr><td><b>${_e(w.word)}</b></td><td>${w.avg} 分</td><td>${w.count}</td><td>${difficulty}</td></tr>`;
         }).join('')}
       </tbody>
     </table>`}
@@ -3072,14 +3082,51 @@ function importStudentsJson(event) {
       if (!data.students || !Array.isArray(data.students)) {
         throw new Error('JSON 格式錯誤');
       }
-      showConfirm(`將匯入 ${data.students.length} 個學生（同 ${Object.keys(data.progress || {}).length} 個進度記錄）。現有資料會被合併（同名學生覆蓋）。確定？`, () => {
-        // Merge: by id, new wins
+      // Check for potential data loss: existing students with newer lastSession
+      const newerLocal = [];
+      (data.students || []).forEach(imp => {
+        const local = state.students.find(s => s.id === imp.id);
+        if (local) {
+          const localTs = state.progress[imp.id]?.lastSession || '';
+          const impTs = data.progress?.[imp.id]?.lastSession || '';
+          if (localTs && impTs && localTs > impTs) {
+            newerLocal.push(local.name);
+          }
+        }
+      });
+      const conflictNote = newerLocal.length > 0
+        ? `\n\n⚠️ 以下學生喺本地有新啲嘅記錄（${newerLocal.slice(0, 3).join('、')}${newerLocal.length > 3 ? '...' : ''}），匯入會保留本地版本。`
+        : '';
+      showConfirm(`將匯入 ${data.students.length} 個學生（同 ${Object.keys(data.progress || {}).length} 個進度記錄）。現有資料會被合併。${conflictNote}`, () => {
+        // Merge: by id, newer lastSession wins (keep local if it has newer data)
         const existingById = {};
         state.students.forEach(s => existingById[s.id] = s);
-        data.students.forEach(s => { existingById[s.id] = s; });
+        (data.students || []).forEach(imp => {
+          const local = state.students.find(s => s.id === imp.id);
+          if (!local) {
+            existingById[imp.id] = imp;
+          } else {
+            // Keep whichever record was updated more recently
+            const localTs = state.progress[imp.id]?.lastSession || '';
+            const impTs = data.progress?.[imp.id]?.lastSession || '';
+            if (!localTs || (impTs && impTs > localTs)) {
+              existingById[imp.id] = imp;
+            }
+            // else keep local (already present in existingById)
+          }
+        });
         state.students = Object.values(existingById);
+        // Progress merge: same newer-wins strategy per student
         if (data.progress) {
-          Object.assign(state.progress, data.progress);
+          Object.entries(data.progress).forEach(([sid, impProg]) => {
+            const localProg = state.progress[sid];
+            const localTs = localProg?.lastSession || '';
+            const impTs = impProg?.lastSession || '';
+            if (!localTs || (impTs && impTs > localTs)) {
+              state.progress[sid] = impProg;
+            }
+            // else keep local progress
+          });
         }
         if (data.loginMode) state.loginMode = data.loginMode;
         _persistStudents();
@@ -3104,7 +3151,12 @@ function toggleAdminPanel() {
   const isHidden = panel.style.display === 'none';
   panel.style.display = isHidden ? 'block' : 'none';
   arrow.textContent = isHidden ? '▲' : '▼';
-  if (isHidden) renderAdminCategoryList();
+  if (isHidden) {
+    renderAdminCategoryList();
+  } else {
+    // Panel is being closed — discard any unsaved toggles
+    _pendingCatToggles = {};
+  }
 }
 
 function renderAdminCategoryList() {
@@ -3116,12 +3168,12 @@ function renderAdminCategoryList() {
   container.innerHTML = state.categories.map(cat => {
     const wordCount = cat.words ? cat.words.length : 0;
     return `<label style="display:flex;align-items:center;gap:12px;margin:10px 0;font-size:1.2em;cursor:pointer;">
-      <input type="checkbox" id="cat_toggle_${cat.id}"
+      <input type="checkbox" id="cat_toggle_${_e(cat.id)}"
         ${cat.enabled ? 'checked' : ''}
-        onchange="toggleAdminCat('${cat.id}', this.checked)"
+        onchange="toggleAdminCat('${_e(cat.id)}', this.checked)"
         style="width:26px;height:26px;accent-color:#f59e0b;">
-      <span style="font-weight:bold;color:#f59e0b;min-width:80px;">${cat.label}</span>
-      <span style="color:rgba(255,255,255,0.7);flex:1;">${cat.description || ''}</span>
+      <span style="font-weight:bold;color:#f59e0b;min-width:80px;">${_e(cat.label)}</span>
+      <span style="color:rgba(255,255,255,0.7);flex:1;">${_e(cat.description || '')}</span>
       <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${wordCount}詞</span>
     </label>`;
   }).join('');
@@ -3156,6 +3208,8 @@ let _editingCatId = null;
 let _confirmCallback = null;
 
 function switchAdminTab(tab) {
+  // Discard any unsaved category toggles when switching tabs
+  _pendingCatToggles = {};
   const tabs = [
     { btn: 'tabSettingsBtn', content: 'tabSettingsContent' },
     { btn: 'tabEditBtn', content: 'tabEditContent' },
@@ -3196,14 +3250,14 @@ function renderEditCategoryList() {
     return `
       <div style="background:rgba(255,255,255,0.05);border-radius:12px;margin:10px 0;padding:12px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <span style="font-weight:bold;color:#f59e0b;font-size:1.15em;flex:1;">${cat.label}</span>
+          <span style="font-weight:bold;color:#f59e0b;font-size:1.15em;flex:1;">${_e(cat.label)}</span>
           <span style="background:rgba(255,255,255,0.15);padding:2px 10px;border-radius:12px;font-size:0.85em;">${wordCount}詞</span>
-          <button onclick="editCategory('${cat.id}')" style="background:#0ea5e9;min-height:36px;padding:6px 12px;font-size:0.9em;">✏️</button>
-          <button onclick="deleteCategory('${cat.id}')" style="background:#dc2626;min-height:36px;padding:6px 12px;font-size:0.9em;">🗑</button>
+          <button onclick="editCategory('${_e(cat.id)}')" style="background:#0ea5e9;min-height:36px;padding:6px 12px;font-size:0.9em;">✏️</button>
+          <button onclick="deleteCategory('${_e(cat.id)}')" style="background:#dc2626;min-height:36px;padding:6px 12px;font-size:0.9em;">🗑</button>
         </div>
-        <div style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-bottom:6px;">${cat.description || ''}</div>
+        <div style="font-size:0.85em;color:rgba(255,255,255,0.5);margin-bottom:6px;">${_e(cat.description || '')}</div>
         <div style="margin-top:8px;">${wordsHtml || '<div style="color:rgba(255,255,255,0.4);font-size:0.9em;padding:6px;">此分類暫無詞彙</div>'}</div>
-        <button onclick="addWordToCategory('${cat.id}')" style="background:#7c3aed;margin-top:8px;width:100%;font-size:0.95em;padding:10px;min-height:44px;">＋ 新增詞彙</button>
+        <button onclick="addWordToCategory('${_e(cat.id)}')" style="background:#7c3aed;margin-top:8px;width:100%;font-size:0.95em;padding:10px;min-height:44px;">＋ 新增詞彙</button>
       </div>
     `;
   }).join('');
@@ -3239,7 +3293,7 @@ function saveWordFromModal() {
   if (!_editingWord) return;
   const charVal = document.getElementById('wm_char').value.trim();
   if (!charVal) {
-    alert('請填寫字符');
+    alert('請填寫字元');
     return;
   }
   const cat = state.categories.find(c => c.id === _editingWord.catId);

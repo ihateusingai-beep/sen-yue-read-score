@@ -1,5 +1,5 @@
 {
-  "_comment": "詞彙數據庫 — 教師可直接編輯此檔案增減詞彙或分類",
+  "_comment": "詞彙資料庫 — 教師可直接編輯此檔案增減詞彙或分類",
   "_teacher_guide": "每個 category 的 enabled: true/false 控制是否出現在學習和評估中",
   "categories": [
     {
