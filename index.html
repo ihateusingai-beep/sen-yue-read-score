@@ -305,7 +305,9 @@ let state = {
   students: [],
   progress: {},       // { [studentId]: progressObj }
   // ASR engine selection (pluggable)
-  asrEngine: 'webspeech'  // 'webspeech' | 'whisper' | 'custom'
+  asrEngine: 'webspeech',  // 'webspeech' | 'whisper' | 'custom'
+  // Recording timeout in seconds (configurable by teacher for SEN students)
+  recordingTimeout: 4
 };
 
 // ================== SECURITY ==================
@@ -674,7 +676,16 @@ function startRecording() {
     return;
   }
 
-  status.innerHTML = '🔴 錄音中… 請大聲朗讀詞彙';
+  status.innerHTML = `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0;">
+      <div style="font-size:1.4em;color:#ef4444;font-weight:bold;">🔴 錄音中</div>
+      <div style="width:100%;max-width:320px;height:20px;background:rgba(255,255,255,0.15);border-radius:10px;overflow:hidden;position:relative;">
+        <div id="recCountdownBar" style="height:100%;background:linear-gradient(90deg,#ef4444,#f59e0b);border-radius:10px;width:100%;transition:width 0.1s linear;"></div>
+      </div>
+      <div style="font-size:1.6em;font-weight:bold;color:#f59e0b;" id="recCountdownNum">${state.recordingTimeout}</div>
+      <div style="font-size:1em;color:rgba(255,255,255,0.7);">請大聲朗讀 👄</div>
+    </div>`;
+  _startCountdownBar(state.recordingTimeout);
 
   // For non-WebSpeech engines, we use MediaRecorder to capture audio blob
   if (engine.id === 'webspeech') {
@@ -712,6 +723,7 @@ function startRecording() {
       status.innerHTML = msg + '，請再試';
     };
     recognition.onend = () => {
+      _stopCountdownBar();
       if (status.innerHTML.includes('錄音中')) status.innerHTML = '錄音結束';
     };
   } else {
@@ -755,8 +767,11 @@ function startRecording() {
         }
       };
       recorder.start();
-      // Auto-stop after 4 seconds (typical for a short word)
-      setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 4000);
+      // Auto-stop after configured seconds (configurable for SEN students)
+      setTimeout(() => {
+        _stopCountdownBar();
+        if (recorder.state === 'recording') recorder.stop();
+      }, state.recordingTimeout * 1000);
     }).catch(err => {
       status.innerHTML = '❌ 麥克風權限被拒：' + err.message;
     });
@@ -774,7 +789,34 @@ function _promptManualInput(status, word) {
   scorePronunciation(txt, { engine: 'manual' });
 }
 
-// Custom engine: extract audio features + compare to a baseline
+// Visual countdown bar + number for recording timeout
+let _countdownTimer = null;
+function _startCountdownBar(seconds) {
+  seconds = seconds || state.recordingTimeout;
+  const bar = document.getElementById('recCountdownBar');
+  const num = document.getElementById('recCountdownNum');
+  if (!bar || !num) return;
+  const totalMs = seconds * 1000;
+  const startTime = Date.now();
+  const update = () => {
+    const elapsed = Date.now() - startTime;
+    const remaining = Math.max(0, totalMs - elapsed);
+    const pct = (remaining / totalMs) * 100;
+    if (bar) bar.style.width = pct + '%';
+    const secLeft = Math.ceil(remaining / 1000);
+    if (num) num.textContent = secLeft;
+    if (remaining <= 0) {
+      if (num) num.textContent = '0';
+      return;
+    }
+    _countdownTimer = requestAnimationFrame(update);
+  };
+  _countdownTimer = requestAnimationFrame(update);
+}
+
+function _stopCountdownBar() {
+  if (_countdownTimer) { cancelAnimationFrame(_countdownTimer); _countdownTimer = null; }
+}
 async function _customScoreAudio(audioBlob, word) {
   try {
     const arrayBuffer = await audioBlob.arrayBuffer();
@@ -1285,6 +1327,13 @@ async function init() {
     state.asrEngine = savedEngine;
   }
 
+  // Load recording timeout
+  const savedTimeout = localStorage.getItem('yueRecordingTimeout');
+  if (savedTimeout) {
+    const t = parseInt(savedTimeout, 10);
+    if (!isNaN(t) && t >= 2 && t <= 15) state.recordingTimeout = t;
+  }
+
   // Decide mode: if there are students, default student mode; otherwise prompt to add
   state.mode = 'student';
   // Restore last student if any
@@ -1396,6 +1445,24 @@ function exitTeacherMode() {
   showToast('👋 已退出老師模式');
 }
 
+function adjustTimeout(delta) {
+  state.recordingTimeout = Math.max(2, Math.min(15, state.recordingTimeout + delta));
+  saveTimeout();
+}
+
+function saveTimeout() {
+  localStorage.setItem('yueRecordingTimeout', state.recordingTimeout);
+  // Re-render the timeout display in settings if it's open
+  const disp = document.getElementById('timeoutDisplay');
+  if (disp) disp.textContent = state.recordingTimeout + ' 秒';
+  // Update the quick-select button colours
+  [4, 6, 8].forEach(v => {
+    const btn = document.getElementById('timeoutBtn_' + v);
+    if (btn) btn.style.background = state.recordingTimeout === v ? '#22c55e' : '#444';
+  });
+  showToast('⏱ 錄音時長：' + state.recordingTimeout + ' 秒');
+}
+
 // Allow teacher to reset their password from the settings tab
 async function resetTeacherPassword() {
   if (!confirm('確定重設老師密碼？')) return;
@@ -1484,7 +1551,21 @@ function renderTeacherSettings() {
       <button onclick="preloadWhisper()" style="margin-top:10px;width:100%;background:#0ea5e9;font-size:0.95em;padding:10px;min-height:44px;">⬇️ 預先下載</button>
       <button onclick="clearWhisperCache()" style="margin-top:8px;width:100%;background:#dc2626;font-size:0.95em;padding:10px;min-height:44px;">🗑 清除 cache</button>
     </div>
-    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:20px;">
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;">
+      <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">⏱ 錄音時長設定</p>
+      <p style="color:rgba(255,255,255,0.7);font-size:0.95em;margin-bottom:12px;">每個詞彙嘅錄音時限。SEN 學生可以調長。</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <button onclick="adjustTimeout(-1)" style="background:#444;color:#fff;font-size:1.4em;padding:8px 18px;min-height:48px;border-radius:10px;min-width:52px;">−</button>
+        <div style="font-size:2em;font-weight:bold;color:#f59e0b;min-width:60px;text-align:center;" id="timeoutDisplay">${state.recordingTimeout} 秒</div>
+        <button onclick="adjustTimeout(1)" style="background:#444;color:#fff;font-size:1.4em;padding:8px 18px;min-height:48px;border-radius:10px;min-width:52px;">+</button>
+        <div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;">
+          <button id="timeoutBtn_4" onclick="state.recordingTimeout=4;saveTimeout();" style="background:${state.recordingTimeout===4?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">預設 4秒</button>
+          <button id="timeoutBtn_6" onclick="state.recordingTimeout=6;saveTimeout();" style="background:${state.recordingTimeout===6?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">慢朗讀 6秒</button>
+          <button id="timeoutBtn_8" onclick="state.recordingTimeout=8;saveTimeout();" style="background:${state.recordingTimeout===8?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">超慢 8秒</button>
+        </div>
+      </div>
+    </div>
+    <div style="background:rgba(255,255,255,0.05);border-radius:12px;padding:14px;margin-top:16px;">
       <p style="font-weight:bold;color:#f59e0b;margin-bottom:8px;">📊 引擎使用統計</p>
       <div id="asrStats" style="font-size:0.95em;color:rgba(255,255,255,0.8);"></div>
     </div>
