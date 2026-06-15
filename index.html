@@ -335,7 +335,8 @@ const _JYUTPING_DICT = {
   '泳': 'wing6', '燒': 'siu1', '烤': 'fok3', '火': 'fo2',
   '鍋': 'wo1', '野': 'je5', '餐': 'caan1', '滴': 'dik1',
   '答': 'daap3', '嘩': 'waa1', '啦': 'laa1', '叮': 'ding1',
-  '咚': 'dung1', '轟': 'gwang1', '隆': 'lung4', '呼': 'fu1',
+  '咚': 'dung1',   '轟': 'gwang1', '隆': 'lung4', '呼': 'fu1',
+  '嗱': 'naa4', '吖': 'aa3', '呀': 'aa3', '咩': 'me1', '嘞': 'lak1', '嘢': 'je5',
   // 高頻 SEN 常用字
   '三': 'saam1', '心': 'sam1', '四': 'sei3', '死': 'sei2',
   '五': 'ng5', '誤': 'ng6', '雞': 'gai1', '機': 'gei1',
@@ -415,12 +416,13 @@ function _transcriptToSyllables(transcript, target) {
       const parsed = _parseJyutping(jyut);
       if (parsed[0]) {
         const split = _splitInitial(parsed[0].rhyme);
-        out.push({ char: c, init: split.init, rhyme: split.rhyme, tone: parsed[0].tone, raw: jyut });
+        out.push({ char: c, init: split.init, rhyme: split.rhyme, tone: parsed[0].tone, raw: jyut, known: true });
       } else {
-        out.push({ char: c, init: '', rhyme: '', tone: 0, raw: jyut });
+        out.push({ char: c, init: '', rhyme: '', tone: 0, raw: jyut, known: true });
       }
     } else {
-      out.push({ char: c, init: '?', rhyme: '?', tone: 0, raw: '?' });
+      // Char not in our jyutping dictionary — mark as unmapped
+      out.push({ char: c, init: '?', rhyme: '?', tone: 0, raw: '?', known: false });
     }
   }
   return out;
@@ -429,6 +431,10 @@ function _transcriptToSyllables(transcript, target) {
 // Classify error type between target and user syllable
 function _classifyError(t, u) {
   if (!t || !u) return { kind: 'unknown', detail: '' };
+  // User char is not in our jyutping dictionary — can't diagnose pronunciation
+  if (u.known === false) {
+    return { kind: 'unmapped', detail: `ASR 認到「${u.char}」，但我冇呢個字嘅讀音資料` };
+  }
   if (t.init === u.init && t.rhyme === u.rhyme && t.tone === u.tone) {
     return { kind: 'match', detail: '' };
   }
@@ -502,6 +508,7 @@ function _diagnosePronunciation(transcript, target, wordPinyin) {
 
   // Walk target chars; for each, find best match in userSylls (greedy)
   const usedUser = new Set();
+  const unmapped = []; // target-side failures where user char is unmapped
   targetSylls.forEach((t, idx) => {
     // First, check homophone trap — if user char is in trap list, treat as homophone even if syllable match exists
     const traps = _HOMOPHONE_TRAPS[t.char] || [];
@@ -513,11 +520,13 @@ function _diagnosePronunciation(transcript, target, wordPinyin) {
       return;
     }
 
+    // Find best match — but if user char is unmapped (not in dict), skip it
     let bestMatch = -1;
     let bestErr = null;
     for (let i = 0; i < userSylls.length; i++) {
       if (usedUser.has(i)) continue;
       const u = userSylls[i];
+      if (u.known === false) continue; // skip unmapped user chars
       const err = _classifyError(t, u);
       if (err.kind === 'match') { bestMatch = i; bestErr = err; break; }
       if (err.kind === 'tone-adj' && !bestErr) { bestMatch = i; bestErr = err; }
@@ -525,7 +534,14 @@ function _diagnosePronunciation(transcript, target, wordPinyin) {
     }
     if (bestMatch === -1) {
       // No user syllable matched this target
-      missing.push({ target: t, char: t.char });
+      // Did the user produce any unmapped chars? If so, this is an ASR-mapping issue
+      const hasUnmapped = userSylls.some(u => u.known === false && !usedUser.has(userSylls.indexOf(u)));
+      if (hasUnmapped) {
+        const unmappedUser = userSylls.find(u => u.known === false && !usedUser.has(userSylls.indexOf(u)));
+        unmapped.push({ target: t, user: unmappedUser });
+      } else {
+        missing.push({ target: t, char: t.char });
+      }
     } else {
       usedUser.add(bestMatch);
       if (bestErr.kind === 'match') {
@@ -548,22 +564,25 @@ function _diagnosePronunciation(transcript, target, wordPinyin) {
     summary = { kind: 'perfect', label: '完全準確' };
   } else if (okCount + nearMiss.length === total) {
     summary = { kind: 'near', label: '差少少就完美' };
-  } else if (homophone.length > 0 && wrong.length === 0 && missing.length === 0) {
+  } else if (homophone.length > 0 && wrong.length === 0 && missing.length === 0 && unmapped.length === 0) {
     // Pure homophone — close but not perfect
     summary = { kind: 'homophone', label: '近音字陷阱' };
+  } else if (unmapped.length > 0 && matched.length === 0 && wrong.length === 0) {
+    // Mostly unmapped — ASR couldn't recognize what student said
+    summary = { kind: 'unmapped', label: 'ASR 無法辨識' };
   } else if (homophone.length > 0) {
     summary = { kind: 'homophone-mix', label: '近音字 + 其他錯誤' };
   } else {
     summary = { kind: 'major', label: '需要再嚟多次' };
   }
 
-  return { matched, nearMiss, wrong, homophone, missing, summary, total };
+  return { matched, nearMiss, wrong, homophone, missing, unmapped, summary, total };
 }
 
 // Convert diagnosis → student-facing (natural language) + teacher-facing (jyutping)
 // Returns { studentText, teacherText, emoji, color }
 function _diagnosisToFeedback(diag) {
-  const { summary, nearMiss, wrong, homophone, missing, matched, total } = diag;
+  const { summary, nearMiss, wrong, homophone, missing, matched, total, unmapped } = diag;
   let emoji, color, studentText, teacherText;
 
   if (summary.kind === 'empty') {
@@ -589,6 +608,13 @@ function _diagnosisToFeedback(diag) {
     return { emoji: '🤓', color: '#f59e0b',
              studentText: `你讀成咗「${hp.user.char}」(${hp.user.jyut})，同「${hp.target.char}」(${hp.target.raw}) 係近音字。${hp.note}`,
              teacherText: `同音字陷阱：${hp.target.char}(${hp.target.raw}) ↔ ${hp.user.char}(${hp.user.jyut}) — ${hp.note}` };
+  }
+  // ASR unmapped cases — distinguish from pronunciation errors
+  if (unmapped && unmapped.length > 0) {
+    const chars = [...new Set(unmapped.map(u => u.user.char))].join('、');
+    return { emoji: '🤔', color: '#f59e0b',
+             studentText: `ASR 認唔到你讀咗咩字 — 可能發音太唔清楚，試下讀慢啲、清楚啲`,
+             teacherText: `${unmapped.length} 個字 ASR 無法辨識（用戶讀出嘅字：「${chars}」）— 建議老師親耳聽錄音判斷` };
   }
   // major / mixed errors
   if (missing.length > 0) {
@@ -1247,12 +1273,13 @@ function scorePronunciation(transcript, opts) {
     const w_count = diagnosis.wrong.length;
     const hp = diagnosis.homophone.length;
     const miss = diagnosis.missing.length;
+    const um = (diagnosis.unmapped || []).length;
     diagDetail =
       `<div style="margin-top:14px;padding:12px;background:rgba(124,58,237,0.08);border-left:4px solid ${diagFb.color};border-radius:8px;text-align:left;">` +
       `<div style="font-weight:bold;color:${diagFb.color};margin-bottom:6px;">🔬 診斷（老師視角）</div>` +
       `<div style="font-size:0.95em;color:#4c1d95;">${_e(diagFb.teacherText)}</div>` +
       `<div style="font-size:0.85em;color:rgba(0,0,0,0.55);margin-top:6px;">` +
-      `匹配 ${m} · 近音 ${nm} · 錯音 ${w_count} · 同音 ${hp} · 缺 ${miss} / 共 ${diagnosis.total} 個音` +
+      `匹配 ${m} · 近音 ${nm} · 錯音 ${w_count} · 同音 ${hp} · 缺 ${miss} · 無法辨識 ${um} / 共 ${diagnosis.total} 個音` +
       `</div></div>`;
   }
 
@@ -2056,7 +2083,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.5';
+const _DEMO_SEED_VERSION = 'v1.1.6';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
