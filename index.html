@@ -833,15 +833,22 @@ function updateHubStatus() {
 function initVocab() {
   const grid = document.getElementById('vocabGrid');
   if (state.words.length === 0) {
-    grid.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.4em;">
-      尚未開啟任何詞彙分類<br>
-      <button onclick="enterTeacherMode()" style="margin-top:20px;background:#555;font-size:1em;padding:14px 28px;">
-        🔧 老師設定
-      </button>
-    </div>`;
-    state.completed.vocab = true;
-    updateHubStatus();
-    return;
+    // Defensive: if categories exist but all disabled, recover by enabling all
+    if (state.categories.length > 0 && !state.categories.some(c => c.enabled)) {
+      state.categories.forEach(c => { c.enabled = true; });
+      _rebuildWords();
+    }
+    if (state.words.length === 0) {
+      grid.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.4em;">
+        詞彙載入失敗<br>
+        <button onclick="location.reload()" style="margin-top:20px;background:#7c3aed;font-size:1em;padding:14px 28px;">
+          🔄 重新整理
+        </button>
+      </div>`;
+      state.completed.vocab = true;
+      updateHubStatus();
+      return;
+    }
   }
   // group by category
   const cats = {};
@@ -894,12 +901,18 @@ function showCategorySelector() {
   const cats = state.categories;
   if (cats.length === 0) {
     container.innerHTML = `<div style="text-align:center;padding:40px;color:#f59e0b;font-size:1.3em;">
-      尚未開啟任何詞彙分類<br>請先到老師設定開啟分類
-      <button onclick="enterTeacherMode()" style="margin-top:16px;background:#555;font-size:1em;padding:12px 24px;">🔧 老師設定</button>
+      詞彙載入失敗<br>請撳下重新整理，或檢查網絡
+      <button onclick="location.reload()" style="margin-top:16px;background:#7c3aed;font-size:1em;padding:12px 24px;">🔄 重新整理</button>
       <br><button onclick="goTo('hub')" style="margin-top:12px;background:#666;font-size:1em;padding:12px 24px;">返回</button>
     </div>`;
     goTo('assessment');
     return;
+  }
+  // Safety net: if user reached this with all disabled (shouldn't happen post-init recovery,
+  // but defensive — e.g. after manual category add without enabling), force-enable all.
+  if (!cats.some(c => c.enabled)) {
+    cats.forEach(c => { c.enabled = true; });
+    _rebuildWords();
   }
   // Default: all enabled cats selected
   if (!state.selectedCategoryIds || state.selectedCategoryIds.length === 0) {
@@ -1762,6 +1775,12 @@ async function init() {
         });
       } catch(e) {}
     }
+    // Safety net: if NO category is enabled (stale override all-false), auto-enable all.
+    // Prevents user from being stuck on "尚未開啟任何詞彙分類" due to leftover localStorage.
+    if (state.categories.length > 0 && !state.categories.some(c => c.enabled)) {
+      console.warn('[init] all categories disabled — auto-enabling all (recover from stale state)');
+      state.categories.forEach(c => { c.enabled = true; });
+    }
     _rebuildWords();
   } catch(e) {
     console.warn('無法載入 data/words.json', e);
@@ -2211,7 +2230,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.10';
+const _DEMO_SEED_VERSION = 'v1.1.11';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
