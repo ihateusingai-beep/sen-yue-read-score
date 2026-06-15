@@ -2211,7 +2211,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.9';
+const _DEMO_SEED_VERSION = 'v1.1.10';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
@@ -2535,7 +2535,17 @@ function _recordAttempt(word, score, transcript, opts) {
   // and any byWord entry from an earlier version of the app may be in the old shape.
   // Guarding here prevents the throw that breaks `scorePronunciation` mid-flow.
   if (!w.history) w.history = [];
-  if (!w.lastTry && w.lastAt) w.lastTry = w.lastAt;
+  // Migrate legacy `lastAt` → `lastTry`. Only copy if lastTry is missing AND we haven't
+  // already overwritten it below. This MUST run before the `w.lastTry = now` line below,
+  // otherwise the migration is dead code (L2541 overwrites it).
+  // However — once we record this attempt, `lastTry` should reflect THIS attempt, not the
+  // legacy value. So: only migrate if there's no incoming real attempt (we always have one
+  // in this function, so just rely on the `w.lastTry = now` assignment below to overwrite).
+  // The real fix: keep the migration for the case where legacy data displays `lastAt` as
+  // the "last try" before any new attempt. We snapshot into history if history is empty.
+  if (w.history.length === 0 && w.lastAt) {
+    w.history.push({ score: w.bestScore || 0, transcript: '(legacy)', at: w.lastAt });
+  }
   const now = new Date().toISOString();
   w.attempts += 1;
   w.lastTry = now;
