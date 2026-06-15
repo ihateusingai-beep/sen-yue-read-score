@@ -981,15 +981,29 @@ function renderFilteredAssessment() {
 
 let recognition;
 let _currentAudioBlob = null;
+// Recording lifecycle state — prevents double-start, allows clean teardown
+let _recordingActive = false;
+let _activeStream = null;       // MediaStream tracks to stop
+let _activeRecorder = null;     // MediaRecorder instance
+let _activeTimeoutId = null;    // Auto-stop setTimeout handle
 
 function startRecording() {
   const status = document.getElementById('recordingStatus');
   const engine = _ASR_ENGINES[state.asrEngine] || _ASR_ENGINES.webspeech;
 
+  // GUARD: prevent double-start (stale instances cause Safari/Chrome hang)
+  if (_recordingActive) {
+    console.warn('[recording] already active, force-clearing first');
+    _stopRecording();
+    // Brief async delay would be safer, but sync is OK — old handles get cleared
+  }
+
   if (!engine.isAvailable()) {
     status.innerHTML = '❌ 此裝置唔支援 ' + engine.name;
     return;
   }
+
+  _recordingActive = true;
 
   status.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0;">
@@ -1005,10 +1019,19 @@ function startRecording() {
   // For non-WebSpeech engines, we use MediaRecorder to capture audio blob
   if (engine.id === 'webspeech') {
     if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      _recordingActive = false;
+      _stopCountdownBar();
       status.innerHTML = '❌ 請用 Chrome（Safari 支援有限）';
       return;
     }
     const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    // Clear any previous instance to avoid double-listener
+    if (recognition) {
+      try { recognition.abort(); } catch (e) { /* already stopped */ }
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+    }
     recognition = new SpeechRec();
     recognition.lang = 'zh-HK';
     recognition.continuous = false;
@@ -1016,6 +1039,8 @@ function startRecording() {
 
     try { recognition.start(); } catch (e) {
       console.error(e);
+      _recordingActive = false;
+      _stopCountdownBar();
       status.innerHTML = '❌ 無法啟動錄音，請檢查權限';
       return;
     }
@@ -1036,23 +1061,44 @@ function startRecording() {
       else if (event.error === 'aborted') msg = '❌ 已取消，請再試';
       else msg = '❌ 請大聲啲或換個安靜地方';
       status.innerHTML = msg + '，請再試';
+      _recordingActive = false;
+      _stopCountdownBar();
     };
     recognition.onend = () => {
       _stopCountdownBar();
-      if (status.innerHTML.includes('錄音中')) status.innerHTML = '錄音結束';
+      _recordingActive = false;
+      // Only show '錄音結束' if still in recording view (not navigated away)
+      const cur = status.innerHTML;
+      if (cur.includes('錄音中') || cur.includes('請大聲朗讀')) {
+        status.innerHTML = '錄音結束';
+      }
     };
   } else {
     // Whisper / Custom: use MediaRecorder to capture audio blob
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      _recordingActive = false;
+      _stopCountdownBar();
       status.innerHTML = '❌ 此瀏覽器不支援錄音';
       return;
     }
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+      // Guard: if user navigated away during async resolution, abandon
+      if (!_recordingActive) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+      _activeStream = stream;
       const recorder = new MediaRecorder(stream);
+      _activeRecorder = recorder;
       const chunks = [];
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = async () => {
+        _stopCountdownBar();
+        _recordingActive = false;
         stream.getTracks().forEach(t => t.stop());
+        _activeStream = null;
+        _activeRecorder = null;
+        if (_activeTimeoutId) { clearTimeout(_activeTimeoutId); _activeTimeoutId = null; }
         const blob = new Blob(chunks, { type: 'audio/webm' });
         _currentAudioBlob = blob;
         try {
@@ -1081,17 +1127,70 @@ function startRecording() {
           status.innerHTML = '❌ 引擎錯誤：' + e.message;
         }
       };
-      recorder.start();
-      // Auto-stop after configured seconds (configurable for SEN students)
-      setTimeout(() => {
+      recorder.onerror = (e) => {
+        console.error('MediaRecorder error:', e);
         _stopCountdownBar();
-        if (recorder.state === 'recording') recorder.stop();
+        _recordingActive = false;
+        status.innerHTML = '❌ 錄音出錯，請再試';
+      };
+      try { recorder.start(); } catch (e) {
+        console.error('recorder.start failed', e);
+        _stopCountdownBar();
+        _recordingActive = false;
+        stream.getTracks().forEach(t => t.stop());
+        _activeStream = null;
+        status.innerHTML = '❌ 無法啟動錄音，請檢查權限';
+        return;
+      }
+      // Auto-stop after configured seconds (configurable for SEN students)
+      _activeTimeoutId = setTimeout(() => {
+        _stopCountdownBar();
+        try {
+          if (recorder.state === 'recording') recorder.stop();
+        } catch (e) { console.warn('auto-stop failed', e); }
       }, state.recordingTimeout * 1000);
     }).catch(err => {
+      _recordingActive = false;
+      _stopCountdownBar();
       status.innerHTML = '❌ 麥克風權限被拒：' + err.message;
     });
   }
 }
+
+// Centralized cleanup — called on error, timeout, navigation, double-start
+function _stopRecording() {
+  _stopCountdownBar();
+  if (_activeTimeoutId) { clearTimeout(_activeTimeoutId); _activeTimeoutId = null; }
+  if (_activeRecorder) {
+    try { if (_activeRecorder.state === 'recording') _activeRecorder.stop(); } catch (e) {}
+    _activeRecorder = null;
+  }
+  if (_activeStream) {
+    try { _activeStream.getTracks().forEach(t => t.stop()); } catch (e) {}
+    _activeStream = null;
+  }
+  if (recognition) {
+    try { recognition.abort(); } catch (e) {}
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    recognition = null;
+  }
+  _recordingActive = false;
+}
+
+// Cleanup on tab hide / navigation away (prevents leaked streams)
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && _recordingActive) {
+    console.warn('[recording] tab hidden, force cleanup');
+    _stopRecording();
+    const status = document.getElementById('recordingStatus');
+    if (status) status.innerHTML = '已暫停（切換分頁）';
+  }
+});
+window.addEventListener('beforeunload', () => {
+  if (_recordingActive || _activeStream) _stopRecording();
+});
 
 function _promptManualInput(status, word) {
   // Fallback: ask student what they said (text input)
@@ -1319,6 +1418,7 @@ function editDistance(a, b) {
 }
 
 function nextAssessment() {
+  _stopRecording(); // safety: ensure no stale recording when navigating
   state.assessmentIndex++;
   goTo('assessment');
   // filteredWords is set by startFilteredAssessment; fall back to all words for legacy path.
@@ -1327,6 +1427,7 @@ function nextAssessment() {
 }
 
 function retryCurrentWord() {
+  _stopRecording(); // safety: ensure no stale recording when navigating
   // Re-attempt the same word without advancing index.
   // _recordAttempt will be called again on next scorePronunciation.
   goTo('assessment');
@@ -2083,7 +2184,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.6';
+const _DEMO_SEED_VERSION = 'v1.1.7';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
