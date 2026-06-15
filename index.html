@@ -986,6 +986,7 @@ let _recordingActive = false;
 let _activeStream = null;       // MediaStream tracks to stop
 let _activeRecorder = null;     // MediaRecorder instance
 let _activeTimeoutId = null;    // Auto-stop setTimeout handle
+let _recordingSession = 0;      // Monotonic counter — stale callback detection
 
 function startRecording() {
   const status = document.getElementById('recordingStatus');
@@ -1004,6 +1005,8 @@ function startRecording() {
   }
 
   _recordingActive = true;
+  _recordingSession++;  // bump session — stale callbacks from previous round get filtered
+  const mySession = _recordingSession;
 
   status.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0;">
@@ -1046,11 +1049,13 @@ function startRecording() {
     }
 
     recognition.onresult = (event) => {
+      if (mySession !== _recordingSession) return; // stale callback from a stopped session
       const transcript = event.results[0][0].transcript.trim();
       status.innerHTML = `你講咗：${_e(transcript)}`;
       scorePronunciation(transcript);
     };
     recognition.onerror = (event) => {
+      if (mySession !== _recordingSession) return; // stale
       console.error('Speech error:', event.error);
       let msg = '❌ 錄音出錯';
       if (event.error === 'not-allowed') msg = '❌ 請允許麥克風權限';
@@ -1065,6 +1070,7 @@ function startRecording() {
       _stopCountdownBar();
     };
     recognition.onend = () => {
+      if (mySession !== _recordingSession) return; // stale — do nothing
       _stopCountdownBar();
       _recordingActive = false;
       // Only show '錄音結束' if still in recording view (not navigated away)
@@ -1083,7 +1089,7 @@ function startRecording() {
     }
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
       // Guard: if user navigated away during async resolution, abandon
-      if (!_recordingActive) {
+      if (!_recordingActive || mySession !== _recordingSession) {
         stream.getTracks().forEach(t => t.stop());
         return;
       }
@@ -1091,8 +1097,15 @@ function startRecording() {
       const recorder = new MediaRecorder(stream);
       _activeRecorder = recorder;
       const chunks = [];
+      // Capture the word being recorded — survives async transcribe + word switch
+      const recordingWord = state.currentWord;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = async () => {
+        if (mySession !== _recordingSession) {
+          // Stale stop event from a session we already abandoned
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
         _stopCountdownBar();
         _recordingActive = false;
         stream.getTracks().forEach(t => t.stop());
@@ -1103,31 +1116,39 @@ function startRecording() {
         _currentAudioBlob = blob;
         try {
           const result = await engine.transcribe(blob, (progress) => {
-            status.innerHTML = '⏳ ' + (progress.message || '處理中…');
+            // Only update status if still in same session (user might have navigated)
+            if (mySession === _recordingSession) {
+              status.innerHTML = '⏳ ' + (progress.message || '處理中…');
+            }
           });
+          if (mySession !== _recordingSession) return; // user moved on, abandon result
           // If engine returned text, score it. If empty (mock/whisper not implemented), fall back.
           if (result.text) {
             status.innerHTML = `你講咗：${_e(result.text)}`;
-            scorePronunciation(result.text, { engine: engine.id, audioBlob: blob, raw: result.raw });
+            scorePronunciation(result.text, { engine: engine.id, audioBlob: blob, raw: result.raw, targetWord: recordingWord });
           } else {
             // Engine returned no text (e.g. whisper local not yet implemented, or custom mode)
             // For custom engine: do self-compare scoring
             if (engine.id === 'custom') {
               status.innerHTML = '🎤 自訂模式：分析聲音特徵中…';
-              const customScore = await _customScoreAudio(blob, state.currentWord);
-              scorePronunciation('', { engine: 'custom', customScore, audioBlob: blob });
+              const customScore = await _customScoreAudio(blob, recordingWord);
+              if (mySession !== _recordingSession) return;
+              scorePronunciation('', { engine: 'custom', customScore, audioBlob: blob, targetWord: recordingWord });
             } else {
               // whisper mock: ask student to type
               status.innerHTML = `⚠️ ${engine.name} 暫未實裝本地模型。請用 Web Speech 或輸入你讀嘅字：`;
-              _promptManualInput(status, state.currentWord);
+              _promptManualInput(status, recordingWord);
             }
           }
         } catch (e) {
           console.error(e);
-          status.innerHTML = '❌ 引擎錯誤：' + e.message;
+          if (mySession === _recordingSession) {
+            status.innerHTML = '❌ 引擎錯誤：' + e.message;
+          }
         }
       };
       recorder.onerror = (e) => {
+        if (mySession !== _recordingSession) return; // stale
         console.error('MediaRecorder error:', e);
         _stopCountdownBar();
         _recordingActive = false;
@@ -1144,12 +1165,14 @@ function startRecording() {
       }
       // Auto-stop after configured seconds (configurable for SEN students)
       _activeTimeoutId = setTimeout(() => {
+        if (mySession !== _recordingSession) return; // session already abandoned
         _stopCountdownBar();
         try {
           if (recorder.state === 'recording') recorder.stop();
         } catch (e) { console.warn('auto-stop failed', e); }
       }, state.recordingTimeout * 1000);
     }).catch(err => {
+      if (mySession !== _recordingSession) return; // stale
       _recordingActive = false;
       _stopCountdownBar();
       status.innerHTML = '❌ 麥克風權限被拒：' + err.message;
@@ -1301,7 +1324,9 @@ function _updateAudioBaseline(word, features) {
 
 function scorePronunciation(transcript, opts) {
   opts = opts || {};
-  const w = state.currentWord;
+  // Use explicit targetWord if provided (async transcribe path), else fall back to state
+  // This prevents stale currentWord from corrupting score when user navigates mid-transcribe
+  const w = opts.targetWord || state.currentWord;
   // Guard: imported/legacy word data may not have a `target` field.
   // Fall back to `char` so scoring still works; surface a console warning
   // so the data gap is visible to the teacher via DevTools.
@@ -2184,7 +2209,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.7';
+const _DEMO_SEED_VERSION = 'v1.1.8';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
