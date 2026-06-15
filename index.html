@@ -1052,7 +1052,8 @@ function startRecording() {
       if (mySession !== _recordingSession) return; // stale callback from a stopped session
       const transcript = event.results[0][0].transcript.trim();
       status.innerHTML = `你講咗：${_e(transcript)}`;
-      scorePronunciation(transcript);
+      // Pass explicit student + word to survive async switch
+      scorePronunciation(transcript, { targetWord: state.currentWord, studentId: state.currentStudentId });
     };
     recognition.onerror = (event) => {
       if (mySession !== _recordingSession) return; // stale
@@ -1097,8 +1098,9 @@ function startRecording() {
       const recorder = new MediaRecorder(stream);
       _activeRecorder = recorder;
       const chunks = [];
-      // Capture the word being recorded — survives async transcribe + word switch
+      // Capture the word + student being recorded — survives async transcribe + user switch
       const recordingWord = state.currentWord;
+      const recordingStudent = state.currentStudentId;
       recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
       recorder.onstop = async () => {
         if (mySession !== _recordingSession) {
@@ -1125,7 +1127,7 @@ function startRecording() {
           // If engine returned text, score it. If empty (mock/whisper not implemented), fall back.
           if (result.text) {
             status.innerHTML = `你講咗：${_e(result.text)}`;
-            scorePronunciation(result.text, { engine: engine.id, audioBlob: blob, raw: result.raw, targetWord: recordingWord });
+            scorePronunciation(result.text, { engine: engine.id, audioBlob: blob, raw: result.raw, targetWord: recordingWord, studentId: recordingStudent });
           } else {
             // Engine returned no text (e.g. whisper local not yet implemented, or custom mode)
             // For custom engine: do self-compare scoring
@@ -1133,7 +1135,7 @@ function startRecording() {
               status.innerHTML = '🎤 自訂模式：分析聲音特徵中…';
               const customScore = await _customScoreAudio(blob, recordingWord);
               if (mySession !== _recordingSession) return;
-              scorePronunciation('', { engine: 'custom', customScore, audioBlob: blob, targetWord: recordingWord });
+              scorePronunciation('', { engine: 'custom', customScore, audioBlob: blob, targetWord: recordingWord, studentId: recordingStudent });
             } else {
               // whisper mock: ask student to type
               status.innerHTML = `⚠️ ${engine.name} 暫未實裝本地模型。請用 Web Speech 或輸入你讀嘅字：`;
@@ -1373,7 +1375,7 @@ function scorePronunciation(transcript, opts) {
   }
 
   state.assessmentScores.push({ word: w.char, score: aiScore, transcript, engine: opts.engine || state.asrEngine, method: scoringMethod, diagnosis });
-  _recordAttempt(w.char, aiScore, transcript);
+  _recordAttempt(w.char, aiScore, transcript, { studentId: opts.studentId });
 
   // show result
   document.getElementById('assessmentContent').innerHTML = '';
@@ -2209,7 +2211,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.8';
+const _DEMO_SEED_VERSION = 'v1.1.9';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
@@ -2514,9 +2516,12 @@ async function clearWhisperCache() {
 }
 
 // ================== PROGRESS TRACKING ==================
-function _recordAttempt(word, score, transcript) {
-  if (!state.currentStudentId) return;
-  const sid = state.currentStudentId;
+function _recordAttempt(word, score, transcript, opts) {
+  opts = opts || {};
+  // Use explicit studentId if provided (async transcribe path), else fall back to state.
+  // Prevents stale currentStudentId from corrupting progress when user switches mid-transcribe.
+  const sid = opts.studentId || state.currentStudentId;
+  if (!sid) return;
   if (!state.progress[sid]) {
     state.progress[sid] = { byWord: {}, totalAttempts: 0, lastSession: null, scores: [] };
   }
@@ -2562,16 +2567,10 @@ let _dashSort = 'default';
 let _drillDownWord = null;
 
 function renderDashboard() {
-  // Ensure fresh state from localStorage (in case stale)
-  try {
-    const sData = JSON.parse(localStorage.getItem('yueStudents') || '{}');
-    if (Array.isArray(sData.students) && sData.students.length > 0 && state.students.length === 0) {
-      state.students = sData.students;
-    }
-    state.progress = JSON.parse(localStorage.getItem('yueProgress') || '{}');
-    // Rebuild words in case categories changed
-    _rebuildWords();
-  } catch(e) {}
+  // No reload from localStorage here — `state` is the source of truth during the session.
+  // Reloading would clobber any in-memory progress updates queued by async transcribe callbacks
+  // and undo teacher edits made between renders. Init code (_init) handles the load on cold start.
+  // Word list rebuild is also a no-op here (init-time responsibility).
 
   const container = document.getElementById('dashboardContent');
   if (!container) {
