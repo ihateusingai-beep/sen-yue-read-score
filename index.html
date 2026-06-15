@@ -10,7 +10,7 @@
   window.TRANSFORMERS_CDN = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.5';
 </script>
 <style>
-:root { --purple:#7c3aed; --gold:#f59e0b; --green:#22c55e; --red:#ef4444; }
+:root { --purple:#7c3aed; --gold:#f59e0b; --green:#22c55e; --red:#ef4444; --warm-orange:#fb923c; }
 * { box-sizing:border-box; margin:0; padding:0; }
 body { font-family:'Microsoft JhengHei',sans-serif; background:#1a1a2e; color:#fff; font-size:18px; min-height:100vh; }
 .page { display:none; min-height:100vh; padding:20px; }
@@ -320,6 +320,295 @@ function _e(s) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ================== PRONUNCIATION DIAGNOSIS (P1-E) ==================
+// Maps 漢字 → jyutping syllable tokens. Initial set covers all 18 words
+// in the default data/words.json plus ~80 high-SEN-frequency characters.
+// Token shape: { c: '春', jyut: 'cheun', tone: 1 }
+const _JYUTPING_DICT = {
+  // 季節 (default vocab)
+  '春': 'cheun1', '天': 'tin1', '夏': 'haa6', '秋': 'cau1',
+  '冬': 'dung1', '季': 'gwai3', '節': 'zit3', '北': 'bak1',
+  '風': 'fung1', '雪': 'syut3', '花': 'faa1', '黃': 'wong4',
+  '葉': 'jip6', '蝴': 'wu4', '蝶': 'dip6', '游': 'jau4',
+  '泳': 'wing6', '燒': 'siu1', '烤': 'fok3', '火': 'fo2',
+  '鍋': 'wo1', '野': 'je5', '餐': 'caan1', '滴': 'dik1',
+  '答': 'daap3', '嘩': 'waa1', '啦': 'laa1', '叮': 'ding1',
+  '咚': 'dung1', '轟': 'gwang1', '隆': 'lung4', '呼': 'fu1',
+  // 高頻 SEN 常用字
+  '三': 'saam1', '心': 'sam1', '四': 'sei3', '死': 'sei2',
+  '五': 'ng5', '誤': 'ng6', '雞': 'gai1', '機': 'gei1',
+  '居': 'geoi1', '爸': 'baa1', '巴': 'baa1', '媽': 'maa4',
+  '家': 'gaa1', '加': 'gaa1', '假': 'gaa3', '架': 'gaa3',
+  '你': 'nei5', '尼': 'nei4', '我': 'ngo5', '佢': 'keoi5',
+  '去': 'heoi3', '魚': 'jyu4', '姨': 'ji4', '衣': 'ji1',
+  '醫': 'ji1', '讀': 'duk6', '毒': 'duk6', '眼': 'ngaan5',
+  '岸': 'ngon6', '日': 'jat6', '一': 'jat1', '月': 'jyut6',
+  '肉': 'juk6', '學': 'hok6', '校': 'haau6', '高': 'gou1',
+  '好': 'hou2', '是': 'si6', '事': 'si6', '市': 'si5',
+  '小': 'siu2', '少': 'siu2', '多': 'do1', '大': 'daai6',
+  '太': 'taai3', '人': 'jan4', '仁': 'jan4', '水': 'seoi2',
+  '睡': 'seoi6', '本': 'bun2', '去': 'heoi3', '叫': 'giu3',
+  '照': 'ziu3', '笑': 'siu3', '漂': 'piu1', '亮': 'loeng6',
+};
+
+// Parse a jyutping string like "cheun1 tin1" → [{init, rhyme, tone, raw}]
+function _parseJyutping(jyutStr) {
+  if (!jyutStr) return [];
+  const tokens = jyutStr.toLowerCase().trim().split(/\s+/);
+  return tokens.map(t => {
+    const m = t.match(/^([a-z]+)([1-6])$/);
+    if (!m) return { init: '', rhyme: t, tone: 0, raw: t };
+    return { init: '', rhyme: m[1], tone: parseInt(m[2]), raw: t };
+  });
+}
+
+// Split a jyutping token into initial consonant + final (rhyme) for diagnosis.
+// Cantonese finals include: aa, aai, aau, ai, au, am, an, ang, ap, at, ak,
+// e, ei, eng, ek, i, iu, im, in, ing, ip, it, ik, o, oi, on, ong, ot, ok,
+// oe, oeng, oek, u, ui, un, ung, ut, uk, eoi, eon, eot, m, ng
+const _JYUT_INITIALS = ['ng', 'gw', 'kw', 'z', 'j', 'c', 's', 'f', 'h', 'b', 'p', 'd', 't', 'g', 'k', 'l', 'm', 'n', 'w'];
+const _JYUT_FINALS = ['oeng','oek','aai','aau','aam','aan','aang','aap','aat','aak',
+  'eoi','eon','eot','ing','oen','ung','ang','eng','ong','ueng','ai','au','ei','oi',
+  'ui','iu','am','an','en','in','un','yn','ap','at','et','it','ot','ut','yt',
+  'ak','ek','ik','ok','uk','oe','e','i','o','u','m','ng','aa','a'];
+function _splitInitial(final) {
+  // Try longest match first
+  for (const ini of _JYUT_INITIALS) {
+    if (final.startsWith(ini) && final.length > ini.length) {
+      return { init: ini, rhyme: final.slice(ini.length) };
+    }
+  }
+  return { init: '', rhyme: final };
+}
+
+// Get pinyin tokens for a 漢字 word (1-2 chars). Falls back gracefully.
+function _getSyllables(chars) {
+  const out = [];
+  for (const c of [...chars]) {
+    const jyut = _JYUTPING_DICT[c];
+    if (jyut) {
+      const parsed = _parseJyutping(jyut);
+      if (parsed[0]) {
+        const split = _splitInitial(parsed[0].rhyme);
+        out.push({ char: c, init: split.init, rhyme: split.rhyme, tone: parsed[0].tone, raw: jyut });
+      } else {
+        out.push({ char: c, init: '', rhyme: '', tone: 0, raw: jyut });
+      }
+    } else {
+      out.push({ char: c, init: '', rhyme: '', tone: 0, raw: '?' });
+    }
+  }
+  return out;
+}
+
+// Tries to map a transcript string back to the target's syllable sequence
+// by matching each transcript character against the dictionary. Returns best-effort array.
+function _transcriptToSyllables(transcript, target) {
+  if (!transcript) return [];
+  const tClean = transcript.replace(/[，。！？、\s]/g, '').toLowerCase();
+  const out = [];
+  for (const c of [...tClean]) {
+    const jyut = _JYUTPING_DICT[c];
+    if (jyut) {
+      const parsed = _parseJyutping(jyut);
+      if (parsed[0]) {
+        const split = _splitInitial(parsed[0].rhyme);
+        out.push({ char: c, init: split.init, rhyme: split.rhyme, tone: parsed[0].tone, raw: jyut });
+      } else {
+        out.push({ char: c, init: '', rhyme: '', tone: 0, raw: jyut });
+      }
+    } else {
+      out.push({ char: c, init: '?', rhyme: '?', tone: 0, raw: '?' });
+    }
+  }
+  return out;
+}
+
+// Classify error type between target and user syllable
+function _classifyError(t, u) {
+  if (!t || !u) return { kind: 'unknown', detail: '' };
+  if (t.init === u.init && t.rhyme === u.rhyme && t.tone === u.tone) {
+    return { kind: 'match', detail: '' };
+  }
+  // Initial mismatch (most important for SEN — sound substitution)
+  if (t.init !== u.init) {
+    // Group by confusion pair — labels mirror student-typical issues
+    const pair = _NEAR_INITIALS[t.init + '|' + u.init] || _NEAR_INITIALS[u.init + '|' + t.init];
+    return { kind: 'initial', detail: pair || `${u.init || '∅'}→${t.init || '∅'}` };
+  }
+  // Final mismatch
+  if (t.rhyme !== u.rhyme) {
+    return { kind: 'final', detail: `${u.rhyme}→${t.rhyme}` };
+  }
+  // Same init + final, tone diff
+  if (t.tone !== u.tone) {
+    const toneGap = Math.abs(t.tone - u.tone);
+    if (toneGap === 1) return { kind: 'tone-adj', detail: `聲調 ${u.tone}→${t.tone}` };
+    return { kind: 'tone-far', detail: `聲調 ${u.tone}→${t.tone}` };
+  }
+  return { kind: 'match', detail: '' };
+}
+
+// Common Cantonese initial confusions for SEN students (display labels).
+const _NEAR_INITIALS = {
+  'n|l': '[n] vs [l]', 'l|n': '[n] vs [l]',
+  'f|w': '[f] vs [w]', 'w|f': '[f] vs [w]',
+  'gw|g': '[gw] vs [g]', 'g|gw': '[gw] vs [g]',
+  'd|t': '[d] vs [t]', 't|d': '[d] vs [t]',
+  'k|g': '[k] vs [g]', 'g|k': '[k] vs [g]',
+  'b|p': '[b] vs [p]', 'p|b': '[b] vs [p]',
+  's|z': '[s] vs [z]', 'z|s': '[s] vs [z]',
+  'c|z': '[c] vs [z]', 'z|c': '[c] vs [z]',
+  'h|f': '[h] vs [f]', 'f|h': '[h] vs [f]',
+  'ng|n': '[ng] vs [n]', 'n|ng': '[ng] vs [n]',
+  'm|n': '[m] vs [n]', 'n|m': '[m] vs [n]',
+};
+
+// Homophone trap: SEN high-frequency near-miss pairs.
+// key = target char, value = array of confusable homophone chars with the jyutping
+const _HOMOPHONE_TRAPS = {
+  '三': [{ char: '心', jyut: 'sam1', note: '同音陷阱：結尾 [m]' }],
+  '四': [{ char: '死', jyut: 'sei2', note: '聲調 3→2' }],
+  '五': [{ char: '誤', jyut: 'ng6', note: '聲調 5→6' }],
+  '雞': [{ char: '機', jyut: 'gei1', note: '同音陷阱：元音 [ai]→[ei]' }, { char: '居', jyut: 'geoi1', note: '同音陷阱' }],
+  '家': [{ char: '加', jyut: 'gaa1', note: '完全同音 — 唔算錯' }, { char: '假', jyut: 'gaa3', note: '聲調 1→3' }],
+  '學': [{ char: '鶴', jyut: 'hok6', note: '同音陷阱' }],
+  '日': [{ char: '一', jyut: 'jat1', note: '聲調 6→1' }],
+  '魚': [{ char: '姨', jyut: 'ji4', note: '同音陷阱' }, { char: '衣', jyut: 'ji1', note: '同音陷阱 + 聲調' }],
+  '醫': [{ char: '衣', jyut: 'ji1', note: '同音陷阱' }],
+  '本': [{ char: '奔', jyut: 'ban1', note: '同音陷阱' }],
+  '水': [{ char: '睡', jyut: 'seoi6', note: '同音陷阱 + 聲調' }],
+  '叫': [{ char: '照', jyut: 'ziu3', note: '同音陷阱' }, { char: '笑', jyut: 'siu3', note: '同音陷阱' }],
+  '高': [{ char: '搞', jyut: 'gaau2', note: '同音陷阱' }],
+  '是': [{ char: '事', jyut: 'si6', note: '完全同音 — 唔算錯' }, { char: '市', jyut: 'si5', note: '聲調 6→5' }],
+};
+
+// Diagnose: returns { matched, nearMiss, wrong, missing, homophone, summary }
+// All diagnosis is in jyutping / display label space — UI layer translates.
+function _diagnosePronunciation(transcript, target, wordPinyin) {
+  // wordPinyin = word-level jyutping like "cheun tin" (jumbo string)
+  // We work at character level for simplicity.
+  const targetChars = [...target];
+  const targetSylls = _getSyllables(target);          // what we WANT
+  const userSylls = _transcriptToSyllables(transcript, target); // what they SAID
+
+  const matched = [];
+  const nearMiss = [];
+  const wrong = [];
+  const homophone = [];
+  const missing = [];
+
+  // Walk target chars; for each, find best match in userSylls (greedy)
+  const usedUser = new Set();
+  targetSylls.forEach((t, idx) => {
+    // First, check homophone trap — if user char is in trap list, treat as homophone even if syllable match exists
+    const traps = _HOMOPHONE_TRAPS[t.char] || [];
+    const homophoneHit = traps.find(hp => userSylls.some(u => u.char === hp.char && !usedUser.has(userSylls.indexOf(u))));
+    if (homophoneHit) {
+      const hpIdx = userSylls.findIndex(u => u.char === homophoneHit.char);
+      usedUser.add(hpIdx);
+      homophone.push({ target: t, user: homophoneHit, note: homophoneHit.note });
+      return;
+    }
+
+    let bestMatch = -1;
+    let bestErr = null;
+    for (let i = 0; i < userSylls.length; i++) {
+      if (usedUser.has(i)) continue;
+      const u = userSylls[i];
+      const err = _classifyError(t, u);
+      if (err.kind === 'match') { bestMatch = i; bestErr = err; break; }
+      if (err.kind === 'tone-adj' && !bestErr) { bestMatch = i; bestErr = err; }
+      if ((err.kind === 'initial' || err.kind === 'final') && !bestErr) { bestMatch = i; bestErr = err; }
+    }
+    if (bestMatch === -1) {
+      // No user syllable matched this target
+      missing.push({ target: t, char: t.char });
+    } else {
+      usedUser.add(bestMatch);
+      if (bestErr.kind === 'match') {
+        matched.push({ target: t });
+      } else if (bestErr.kind === 'tone-adj') {
+        nearMiss.push({ target: t, user: userSylls[bestMatch], err: bestErr });
+      } else {
+        wrong.push({ target: t, user: userSylls[bestMatch], err: bestErr });
+      }
+    }
+  });
+
+  // Build summary
+  let summary;
+  const total = targetSylls.length;
+  const okCount = matched.length;
+  if (total === 0) {
+    summary = { kind: 'empty', label: '無資料' };
+  } else if (okCount === total) {
+    summary = { kind: 'perfect', label: '完全準確' };
+  } else if (okCount + nearMiss.length === total) {
+    summary = { kind: 'near', label: '差少少就完美' };
+  } else if (homophone.length > 0 && wrong.length === 0 && missing.length === 0) {
+    // Pure homophone — close but not perfect
+    summary = { kind: 'homophone', label: '近音字陷阱' };
+  } else if (homophone.length > 0) {
+    summary = { kind: 'homophone-mix', label: '近音字 + 其他錯誤' };
+  } else {
+    summary = { kind: 'major', label: '需要再嚟多次' };
+  }
+
+  return { matched, nearMiss, wrong, homophone, missing, summary, total };
+}
+
+// Convert diagnosis → student-facing (natural language) + teacher-facing (jyutping)
+// Returns { studentText, teacherText, emoji, color }
+function _diagnosisToFeedback(diag) {
+  const { summary, nearMiss, wrong, homophone, missing, matched, total } = diag;
+  let emoji, color, studentText, teacherText;
+
+  if (summary.kind === 'empty') {
+    return { emoji: '🤷', color: '#7c3aed',
+             studentText: '老師再示範一次，跟住讀 💫',
+             teacherText: '（無可診斷資料）' };
+  }
+  if (summary.kind === 'perfect') {
+    return { emoji: '🎉', color: '#22c55e',
+             studentText: '做得好！發音好準！',
+             teacherText: `全部 ${total} 個音準確 ✅` };
+  }
+  if (summary.kind === 'near') {
+    // Near miss only — same rhyme, just tone off
+    const tip = nearMiss[0];
+    const tipLabel = tip.err.detail; // e.g. "聲調 1→3"
+    return { emoji: '👍', color: '#22c55e',
+             studentText: `唔錯！「${tip.target.char}」個音差少少，再嚟一次就完美`,
+             teacherText: `近音成功 ${matched.length}/${total} — ${tipLabel}（${tip.target.raw} vs ${tip.user.raw}）` };
+  }
+  if (summary.kind === 'homophone') {
+    const hp = homophone[0];
+    return { emoji: '🤓', color: '#f59e0b',
+             studentText: `你讀成咗「${hp.user.char}」(${hp.user.jyut})，同「${hp.target.char}」(${hp.target.raw}) 係近音字。${hp.note}`,
+             teacherText: `同音字陷阱：${hp.target.char}(${hp.target.raw}) ↔ ${hp.user.char}(${hp.user.jyut}) — ${hp.note}` };
+  }
+  // major / mixed errors
+  if (missing.length > 0) {
+    return { emoji: '💪', color: '#f59e0b',
+             studentText: `唔緊要！「${missing[0].target.char}」再試多次，老師陪你一齊嚟`,
+             teacherText: `缺少 ${missing.length} 個字：${missing.map(m => m.target.char).join('、')}` };
+  }
+  // wrong (initial/final)
+  const w = wrong[0];
+  return { emoji: '💪', color: '#f59e0b',
+           studentText: `「${w.target.char}」個音差少少，留意 ${w.err.detail}`,
+           teacherText: `${w.target.char} 錯音：${w.err.detail}（${w.target.raw} vs ${w.user.raw}）` };
+}
+
+// Score → stars (P1-A)
+function _scoreToStars(score) {
+  if (score >= 80) return { stars: 3, emoji: '🌟🌟🌟', color: '#22c55e' };
+  if (score >= 60) return { stars: 2, emoji: '🌟🌟', color: '#22c55e' };
+  if (score >= 40) return { stars: 1, emoji: '🌟', color: '#f59e0b' };
+  return { stars: 0, emoji: '💪', color: '#fb923c' };
 }
 
 // ================== ASR ENGINE LAYER ==================
@@ -896,6 +1185,7 @@ function scorePronunciation(transcript, opts) {
   }
   const target = w.target || w.char || '';
   let aiScore, feedback, scoringMethod;
+  let diagnosis = null;
 
   if (opts.engine === 'custom' && opts.customScore) {
     // Custom engine: use audio-feature score directly
@@ -903,10 +1193,12 @@ function scorePronunciation(transcript, opts) {
     const dur = opts.customScore.duration ? opts.customScore.duration.toFixed(1) : '?';
     const energy = opts.customScore.rms ? Math.round(opts.customScore.rms * 100) : '?';
     feedback = aiScore >= 85
-      ? `做得好！（${dur}秒, 能量${energy}）`
+      ? `🎉 做得好！（${dur}秒, 能量${energy}）`
       : aiScore >= 55
-      ? `唔錯！（${dur}秒, 能量${energy}）繼續努力～`
-      : `再嚟多次！（${dur}秒 — 試下讀耐啲）`;
+      ? `👍 唔錯！（${dur}秒, 能量${energy}）繼續努力～`
+      : aiScore >= 30
+      ? `💪 再嚟多次！（${dur}秒 — 試下讀耐啲）`
+      : `🤗 唔緊要！（${dur}秒）老師陪你一齊嚟`;
     scoringMethod = 'custom-audio';
   } else {
     // String-match scoring (WebSpeech / Whisper / manual)
@@ -921,22 +1213,56 @@ function scorePronunciation(transcript, opts) {
     const overlapBonus = overlap * 18;
     const firstMatch = (targetChars[0] && userChars[0] && targetChars[0] === userChars[0]) ? 15 : 0;
     aiScore = Math.min(100, Math.floor(similarity * 50 + overlapBonus + firstMatch + bonus));
-    feedback = aiScore >= 85 ? '做得好！發音好準！' : aiScore >= 55 ? '唔錯！繼續努力～' : '再試一次，你可以嘅！';
     scoringMethod = 'string-match';
+
+    // P1-E: Pronunciation diagnosis — characterize WHAT was wrong, not just similarity
+    diagnosis = _diagnosePronunciation(transcript, target, w.pinyin);
+    const diagFb = _diagnosisToFeedback(diagnosis);
+    // Combine emoji-prefixed message with diagnostic detail
+    feedback = `${diagFb.emoji} ${diagFb.studentText}`;
   }
 
-  state.assessmentScores.push({ word: w.char, score: aiScore, transcript, engine: opts.engine || state.asrEngine, method: scoringMethod });
+  state.assessmentScores.push({ word: w.char, score: aiScore, transcript, engine: opts.engine || state.asrEngine, method: scoringMethod, diagnosis });
   _recordAttempt(w.char, aiScore, transcript);
 
   // show result
   document.getElementById('assessmentContent').innerHTML = '';
   goTo('result');
   document.getElementById('resultWord').textContent = w.char;
-  document.getElementById('resultScore').textContent = aiScore + '/100';
+
+  // P1-A: Score → stars UI (warm color, not raw number dominant)
+  const stars = _scoreToStars(aiScore);
+  document.getElementById('resultScore').innerHTML =
+    `<div style="font-size:2.6em;line-height:1;color:${stars.color};">${stars.emoji}</div>` +
+    `<div style="font-size:0.95em;color:rgba(0,0,0,0.55);margin-top:6px;">AI 評分 ${aiScore}/100</div>`;
+
   document.getElementById('resultFeedback').textContent = feedback;
-  document.getElementById('resultAI').innerHTML = `AI 評分：${aiScore}分<br>你講：${_e(transcript || '（自訂模式）')}<br>正確：${_e(target)}<br><span style="font-size:0.85em;color:#7c3aed;">引擎：${_e(opts.engine || state.asrEngine)}｜方法：${_e(scoringMethod)}</span>`;
-  
-  if (aiScore >= 80) {
+
+  // P1-E: Build diagnostic detail block for teacher view
+  let diagDetail = '';
+  if (diagnosis && diagnosis.total > 0) {
+    const diagFb = _diagnosisToFeedback(diagnosis);
+    const m = diagnosis.matched.length;
+    const nm = diagnosis.nearMiss.length;
+    const w_count = diagnosis.wrong.length;
+    const hp = diagnosis.homophone.length;
+    const miss = diagnosis.missing.length;
+    diagDetail =
+      `<div style="margin-top:14px;padding:12px;background:rgba(124,58,237,0.08);border-left:4px solid ${diagFb.color};border-radius:8px;text-align:left;">` +
+      `<div style="font-weight:bold;color:${diagFb.color};margin-bottom:6px;">🔬 診斷（老師視角）</div>` +
+      `<div style="font-size:0.95em;color:#4c1d95;">${_e(diagFb.teacherText)}</div>` +
+      `<div style="font-size:0.85em;color:rgba(0,0,0,0.55);margin-top:6px;">` +
+      `匹配 ${m} · 近音 ${nm} · 錯音 ${w_count} · 同音 ${hp} · 缺 ${miss} / 共 ${diagnosis.total} 個音` +
+      `</div></div>`;
+  }
+
+  document.getElementById('resultAI').innerHTML =
+    `AI 評分：${aiScore}分<br>你講：${_e(transcript || '（自訂模式）')}<br>正確：${_e(target)}<br>` +
+    `<span style="font-size:0.85em;color:#7c3aed;">引擎：${_e(opts.engine || state.asrEngine)}｜方法：${_e(scoringMethod)}</span>` +
+    diagDetail;
+
+  // P1-C: Confetti threshold lowered from 80 → 60 for SEN friendliness
+  if (aiScore >= 60) {
     showConfetti(12);
   }
 }
@@ -1204,10 +1530,9 @@ function showMyProgress() {
       <div style="background:rgba(239,68,68,0.15);border:2px solid rgba(239,68,68,0.5);border-radius:16px;padding:16px;margin:12px 0;">
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
           <div style="font-size:2em;">💪</div>
-          <div style="font-size:1.3em;font-weight:bold;color:#ef4444;">${struggling.length}</div>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;">
-          ${struggling.map(([w, _]) => `<div style="background:rgba(239,68,68,0.3);border:2px solid #ef4444;border-radius:16px;padding:8px 14px;font-size:1.3em;font-weight:bold;display:flex;align-items:center;gap:6px;"><span style="font-size:1.3em;">${emojiFor(w)}</span><span>${w}</span></div>`).join('')}
+          <div style="font-size:1.3em;font-weight:bold;color:#fb923c;">${struggling.length}</div>
+          </div>
+          ${struggling.map(([w, _]) => `<div style="background:rgba(251,146,60,0.3);border:2px solid #fb923c;border-radius:16px;padding:8px 14px;font-size:1.3em;font-weight:bold;display:flex;align-items:center;gap:6px;"><span style="font-size:1.3em;">${emojiFor(w)}</span><span>${w}</span></div>`).join('')}
         </div>
       </div>` : ''}
 
@@ -1731,7 +2056,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.4';
+const _DEMO_SEED_VERSION = 'v1.1.5';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
@@ -2181,7 +2506,7 @@ function renderDashboard() {
     const untouchedCount = Math.max(0, totalSlots - masteredCount - practicingCount - touchedCount);
     const funnelStages = [
       { label: '未接觸', count: untouchedCount, color: 'rgba(255,255,255,0.3)' },
-      { label: '接觸過', count: touchedCount, color: '#ef4444' },
+      { label: '接觸過', count: touchedCount, color: '#fb923c' },
       { label: '進步中', count: practicingCount, color: '#f59e0b' },
       { label: '已掌握', count: masteredCount, color: '#22c55e' }
     ];
@@ -2250,7 +2575,7 @@ function renderDashboard() {
     const alerts = _buildAlerts(allScores);
     if (alerts.length > 0) {
       html += `<div style="background:rgba(239,68,68,0.1);border:2px solid rgba(239,68,68,0.3);border-radius:12px;padding:14px;margin-bottom:14px;">
-        <p style="font-weight:bold;color:#ef4444;margin-bottom:8px;">⚠️ 需要跟進（${alerts.length}）</p>
+        <p style="font-weight:bold;color:#fb923c;margin-bottom:8px;">⚠️ 需要跟進（${alerts.length}）</p>
         ${alerts.map(a => `<div style="padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.08);font-size:0.95em;">${a}</div>`).join('')}
       </div>`;
     }
@@ -2366,7 +2691,7 @@ function renderDashboard() {
         else trendLabel = '→ ±0';
       }
     }
-    const trendColor = trendLabel.startsWith('↗') ? '#22c55e' : trendLabel.startsWith('↘') ? '#ef4444' : 'rgba(255,255,255,0.6)';
+    const trendColor = trendLabel.startsWith('↗') ? '#22c55e' : trendLabel.startsWith('↘') ? '#fb923c' : 'rgba(255,255,255,0.6)';
     // Streak: consecutive days of practice ending today or yesterday
     const streak = _calcStreak(allScoresList);
     const streakBadge = streak >= 2
@@ -2470,7 +2795,7 @@ function _renderWordDrillDownPanel(word) {
     </div>
     ${struggling.length > 0
       ? `<p style="font-size:0.85em;color:rgba(255,255,255,0.6);margin-bottom:6px;">⚠️ 掂緊緊（最高分 &lt; 70）— ${struggling.length} 人</p>
-         ${struggling.map(r => renderRow(r, `${r.attempts} 次 • 最高 ${r.bestScore} 分`, '#ef4444')).join('')}`
+         ${struggling.map(r => renderRow(r, `${r.attempts} 次 • 最高 ${r.bestScore} 分`, '#fb923c')).join('')}`
       : ''}
     ${mastered.length > 0
       ? `<p style="font-size:0.85em;color:rgba(255,255,255,0.6);margin:10px 0 6px;">✅ 已掌握（最高分 ≥ 70）— ${mastered.length} 人</p>
@@ -2557,7 +2882,7 @@ function _renderSparkline(data, width, height) {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
   const last = data[data.length - 1];
-  const lastColor = last >= 80 ? '#22c55e' : last >= 60 ? '#f59e0b' : '#ef4444';
+  const lastColor = last >= 80 ? '#22c55e' : last >= 60 ? '#f59e0b' : '#fb923c';
   return `<svg viewBox="0 0 ${width} ${height}" style="width:100%;height:30px;">
     <polyline points="${points}" fill="none" stroke="${lastColor}" stroke-width="2"/>
     <circle cx="${((data.length-1)*stepX).toFixed(1)}" cy="${(height - ((last-min)/(max-min))*height).toFixed(1)}" r="3" fill="${lastColor}"/>
@@ -2578,7 +2903,7 @@ function _renderSessionDots(scores, n) {
     if (s === null) {
       return `<span title="第 ${i+1} 次：未有資料" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);margin:0 1px;vertical-align:middle;"></span>`;
     }
-    const c = s.score >= 80 ? '#22c55e' : s.score >= 60 ? '#f59e0b' : '#ef4444';
+    const c = s.score >= 80 ? '#22c55e' : s.score >= 60 ? '#f59e0b' : '#fb923c';
     const word = s.word || '';
     const date = s.at ? new Date(s.at).toLocaleString('zh-HK', { month:'numeric', day:'numeric' }) : '';
     return `<span title="第 ${i+1} 次：${word} ${s.score} 分（${date}）" style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${c};box-shadow:0 0 0 1px rgba(0,0,0,0.3) inset;margin:0 1px;vertical-align:middle;"></span>`;
@@ -2660,7 +2985,7 @@ function _renderBarChart(items, maxValue, clickFnName) {
   items.forEach((item, i) => {
     const y = i * (rowH + gap);
     const pct = (item.value / maxValue) * 100;
-    const barColor = item.value < 50 ? '#ef4444' : item.value < 70 ? '#f59e0b' : '#22c55e';
+    const barColor = item.value < 50 ? '#fb923c' : item.value < 70 ? '#f59e0b' : '#22c55e';
     const rowInner = `
       <text x="0" y="${y + rowH/2 + 4}" font-size="12" fill="rgba(255,255,255,0.9)" font-weight="bold">${item.label}</text>
       <rect x="${labelW}" y="${y + 4}" width="${barAreaW}" height="${rowH - 8}" rx="4" fill="rgba(0,0,0,0.3)"/>
@@ -2928,7 +3253,7 @@ function showStudentDetail(studentId, focusWord) {
       const lastTry = data.lastTry ? new Date(data.lastTry).toLocaleString('zh-HK', { month:'numeric', day:'numeric', hour:'numeric', minute:'numeric' }) : '';
       const scoreTrend = (data.history || []).slice(-5).map(h => h.score);
       const miniBar = scoreTrend.map(sc => {
-        const c = sc >= 80 ? '#22c55e' : sc >= 60 ? '#f59e0b' : '#ef4444';
+        const c = sc >= 80 ? '#22c55e' : sc >= 60 ? '#f59e0b' : '#fb923c';
         return `<div style="display:inline-block;width:6px;height:${Math.max(4, sc/3)}px;background:${c};margin-right:2px;border-radius:2px;vertical-align:bottom;" title="${sc}分"></div>`;
       }).join('');
       const focusStyle = isFocus ? 'border:2px solid #f59e0b;box-shadow:0 0 0 3px rgba(245,158,11,0.25);' : '';
@@ -2989,7 +3314,7 @@ function exportStudentReport(studentId) {
       th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e5e7eb; }
       th { background: #f59e0b; color: #fff; font-weight: bold; }
       .status-ok { color: #22c55e; font-weight: bold; }
-      .status-warn { color: #ef4444; font-weight: bold; }
+      .status-warn { color: #fb923c; font-weight: bold; }
       .status-mid { color: #f59e0b; font-weight: bold; }
       .footer { margin-top: 40px; padding-top: 20px; border-top: 2px solid #e5e7eb; color: #999; font-size: 0.9em; text-align: center; }
       .print-btn { background: #7c3aed; color: #fff; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-size: 1em; margin: 20px 0; }
