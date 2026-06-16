@@ -629,12 +629,13 @@ function _diagnosisToFeedback(diag) {
            teacherText: `${w.target.char} 錯音：${w.err.detail}（${w.target.raw} vs ${w.user.raw}）` };
 }
 
-// Score → stars (P1-A)
+// Score → 3-tier stars (simplified for SEN — 1/2/3 stars only)
+// 3 stars = 做得很好 (≥75) | 2 stars = 有進步 (≥45) | 1 star = 仍須努力 (<45)
+// Old 80/60/40/0 boundaries replaced with friendlier 75/45 (Option B — bias toward reward)
 function _scoreToStars(score) {
-  if (score >= 80) return { stars: 3, emoji: '🌟🌟🌟', color: '#22c55e' };
-  if (score >= 60) return { stars: 2, emoji: '🌟🌟', color: '#22c55e' };
-  if (score >= 40) return { stars: 1, emoji: '🌟', color: '#f59e0b' };
-  return { stars: 0, emoji: '💪', color: '#fb923c' };
+  if (score >= 75) return { stars: 3, emoji: '⭐⭐⭐', color: '#22c55e', label: '做得很好' };
+  if (score >= 45) return { stars: 2, emoji: '⭐⭐', color: '#22c55e', label: '有進步' };
+  return { stars: 1, emoji: '⭐', color: '#fb923c', label: '仍須努力' };
 }
 
 // ================== ASR ENGINE LAYER ==================
@@ -1354,16 +1355,15 @@ function scorePronunciation(transcript, opts) {
 
   if (opts.engine === 'custom' && opts.customScore) {
     // Custom engine: use audio-feature score directly
+    // 3-tier feedback aligned with star rating (75/45 boundaries)
     aiScore = opts.customScore.score;
     const dur = opts.customScore.duration ? opts.customScore.duration.toFixed(1) : '?';
     const energy = opts.customScore.rms ? Math.round(opts.customScore.rms * 100) : '?';
-    feedback = aiScore >= 85
-      ? `🎉 做得好！（${dur}秒, 能量${energy}）`
-      : aiScore >= 55
-      ? `👍 唔錯！（${dur}秒, 能量${energy}）繼續努力～`
-      : aiScore >= 30
-      ? `💪 再嚟多次！（${dur}秒 — 試下讀耐啲）`
-      : `🤗 唔緊要！（${dur}秒）老師陪你一齊嚟`;
+    feedback = aiScore >= 75
+      ? `🎉 做得很好！（${dur}秒, 能量${energy}）`
+      : aiScore >= 45
+      ? `👍 有進步！（${dur}秒, 能量${energy}）繼續努力～`
+      : `💪 仍須努力！（${dur}秒）老師陪你一齊嚟`;
     scoringMethod = 'custom-audio';
   } else {
     // String-match scoring (WebSpeech / Whisper / manual)
@@ -1395,11 +1395,12 @@ function scorePronunciation(transcript, opts) {
   goTo('result');
   document.getElementById('resultWord').textContent = w.char;
 
-  // P1-A: Score → stars UI (warm color, not raw number dominant)
+  // P1-A: Score → 3-tier stars UI (75/45 boundaries, monochrome ⭐, warm color)
   const stars = _scoreToStars(aiScore);
   document.getElementById('resultScore').innerHTML =
-    `<div style="font-size:2.6em;line-height:1;color:${stars.color};">${stars.emoji}</div>` +
-    `<div style="font-size:0.95em;color:rgba(0,0,0,0.55);margin-top:6px;">AI 評分 ${aiScore}/100</div>`;
+    `<div style="font-size:3em;line-height:1;color:${stars.color};letter-spacing:4px;">${stars.emoji}</div>` +
+    `<div style="font-size:1.1em;font-weight:bold;color:${stars.color};margin-top:8px;">${stars.label}</div>` +
+    `<div style="font-size:0.85em;color:rgba(0,0,0,0.5);margin-top:4px;">AI 評分 ${aiScore}/100</div>`;
 
   document.getElementById('resultFeedback').textContent = feedback;
 
@@ -1427,8 +1428,8 @@ function scorePronunciation(transcript, opts) {
     `<span style="font-size:0.85em;color:#7c3aed;">引擎：${_e(opts.engine || state.asrEngine)}｜方法：${_e(scoringMethod)}</span>` +
     diagDetail;
 
-  // P1-C: Confetti threshold lowered from 80 → 60 for SEN friendliness
-  if (aiScore >= 60) {
+  // P1-C: Confetti threshold aligned with 3-tier stars (≥45 = 2 粒 = 至少一次 celebration)
+  if (aiScore >= 45) {
     showConfetti(12);
   }
 }
@@ -2230,7 +2231,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.11';
+const _DEMO_SEED_VERSION = 'v1.1.12';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
