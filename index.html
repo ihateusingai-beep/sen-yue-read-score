@@ -306,8 +306,10 @@ let state = {
   progress: {},       // { [studentId]: progressObj }
   // ASR engine selection (pluggable)
   asrEngine: 'webspeech',  // 'webspeech' | 'whisper' | 'custom'
-  // Recording timeout in seconds (configurable by teacher for SEN students)
-  recordingTimeout: 4
+  // Recording timeout in seconds (configurable by teacher for SEN students).
+  // Range 5-30s. Default 8s accommodates both short words (4-6s) and mid sentences (8-15s).
+  // For sentence-type words, effectiveTimeout is forced ≥ 15s regardless of this setting.
+  recordingTimeout: 8
 };
 
 // ================== SECURITY ==================
@@ -1023,16 +1025,22 @@ function startRecording() {
   const mySession = _recordingSession;
   _disableRecordButton(); // prevent double-click hang
 
+  // Sentence-mode override: force minimum 15s timeout so user has time to read full sentence.
+  // Word-mode uses whatever the teacher configured (5-30s).
+  const effectiveTimeout = (state.currentWord && state.currentWord.type === 'sentence')
+    ? Math.max(state.recordingTimeout, 15)
+    : state.recordingTimeout;
+
   status.innerHTML = `
     <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0;">
       <div style="font-size:1.4em;color:#ef4444;font-weight:bold;">🔴 錄音中</div>
       <div style="width:100%;max-width:320px;height:20px;background:rgba(255,255,255,0.15);border-radius:10px;overflow:hidden;position:relative;">
         <div id="recCountdownBar" style="height:100%;background:linear-gradient(90deg,#ef4444,#f59e0b);border-radius:10px;width:100%;transition:width 0.1s linear;"></div>
       </div>
-      <div style="font-size:1.6em;font-weight:bold;color:#f59e0b;" id="recCountdownNum">${state.recordingTimeout}</div>
+      <div style="font-size:1.6em;font-weight:bold;color:#f59e0b;" id="recCountdownNum">${effectiveTimeout}</div>
       <div style="font-size:1em;color:rgba(255,255,255,0.7);">請大聲朗讀 👄</div>
     </div>`;
-  _startCountdownBar(state.recordingTimeout);
+  _startCountdownBar(effectiveTimeout);
 
   // For non-WebSpeech engines, we use MediaRecorder to capture audio blob
   if (engine.id === 'webspeech') {
@@ -1116,7 +1124,7 @@ function startRecording() {
       _recordingActive = false;
       _stopCountdownBar();
       _enableRecordButton();
-    }, (state.recordingTimeout + 5) * 1000);
+    }, (effectiveTimeout + 5) * 1000);
   } else {
     // Whisper / Custom: use MediaRecorder to capture audio blob
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -1214,7 +1222,7 @@ function startRecording() {
         try {
           if (recorder.state === 'recording') recorder.stop();
         } catch (e) { console.warn('auto-stop failed', e); }
-      }, state.recordingTimeout * 1000);
+      }, effectiveTimeout * 1000);
     }).catch(err => {
       if (mySession !== _recordingSession) return; // stale
       _recordingActive = false;
@@ -1883,7 +1891,7 @@ async function init() {
   const savedTimeout = localStorage.getItem('yueRecordingTimeout');
   if (savedTimeout) {
     const t = parseInt(savedTimeout, 10);
-    if (!isNaN(t) && t >= 2 && t <= 15) state.recordingTimeout = t;
+    if (!isNaN(t) && t >= 5 && t <= 30) state.recordingTimeout = t;
   }
 
   // Decide mode: if there are students, default student mode; otherwise prompt to add
@@ -1904,11 +1912,27 @@ function _rebuildWords() {
   state.categories.forEach(cat => {
     if (cat.enabled) {
       cat.words.forEach(w => {
+        // Back-compat: ensure type + wordBoundary exist
+        if (!w.type) w.type = 'word';
+        if (w.type === 'sentence' && !w.wordBoundary) {
+          w.wordBoundary = _deriveWordBoundary(w.char);
+        }
         state.words.push({ ...w, categoryId: cat.id, categoryLabel: cat.label });
       });
     }
   });
   state.selectedCategoryIds = state.categories.filter(c => c.enabled).map(c => c.id);
+}
+
+// Split a sentence into 2-char chunks for phrase-level diagnosis fallback
+// Used when sentence entry has no explicit wordBoundary
+function _deriveWordBoundary(sentence) {
+  const chars = [...sentence];
+  const chunks = [];
+  for (let i = 0; i < chars.length; i += 2) {
+    chunks.push(chars.slice(i, i + 2).join(''));
+  }
+  return chunks;
 }
 
 // ================== LOGIN ==================
@@ -1998,7 +2022,7 @@ function exitTeacherMode() {
 }
 
 function adjustTimeout(delta) {
-  state.recordingTimeout = Math.max(2, Math.min(15, state.recordingTimeout + delta));
+  state.recordingTimeout = Math.max(5, Math.min(30, state.recordingTimeout + delta));
   saveTimeout();
 }
 
@@ -2111,9 +2135,9 @@ function renderTeacherSettings() {
         <div style="font-size:2em;font-weight:bold;color:#f59e0b;min-width:60px;text-align:center;" id="timeoutDisplay">${state.recordingTimeout} 秒</div>
         <button onclick="adjustTimeout(1)" style="background:#444;color:#fff;font-size:1.4em;padding:8px 18px;min-height:48px;border-radius:10px;min-width:52px;">+</button>
         <div style="display:flex;flex-direction:column;gap:4px;margin-left:8px;">
-          <button id="timeoutBtn_4" onclick="state.recordingTimeout=4;saveTimeout();" style="background:${state.recordingTimeout===4?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">預設 4秒</button>
-          <button id="timeoutBtn_6" onclick="state.recordingTimeout=6;saveTimeout();" style="background:${state.recordingTimeout===6?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">慢朗讀 6秒</button>
-          <button id="timeoutBtn_8" onclick="state.recordingTimeout=8;saveTimeout();" style="background:${state.recordingTimeout===8?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">超慢 8秒</button>
+          <button id="timeoutBtn_8" onclick="state.recordingTimeout=8;saveTimeout();" style="background:${state.recordingTimeout===8?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">預設 8秒</button>
+          <button id="timeoutBtn_15" onclick="state.recordingTimeout=15;saveTimeout();" style="background:${state.recordingTimeout===15?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">慢朗讀 15秒</button>
+          <button id="timeoutBtn_25" onclick="state.recordingTimeout=25;saveTimeout();" style="background:${state.recordingTimeout===25?'#22c55e':'#444'};color:#fff;font-size:0.85em;padding:6px 12px;min-height:36px;border-radius:8px;">句子 25秒</button>
         </div>
       </div>
     </div>
@@ -2285,7 +2309,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.1.13';
+const _DEMO_SEED_VERSION = 'v1.2.0-beta.1';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version

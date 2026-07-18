@@ -43,6 +43,19 @@
         { "char": "轟隆轟隆", "pinyin": "hung lung hung lung", "meaning": "火車行駛的聲音", "target": "轟隆轟隆", "image": "hung-lung.png" },
         { "char": "呼呼", "pinyin": "fu fu", "meaning": "風吹過的聲音", "target": "呼呼", "image": "fu-fu.png" }
       ]
+    },
+    {
+      "id": "sentence",
+      "label": "日常句子",
+      "description": "5-15 個字嘅日常粵語句子，適合中度智障學生朗讀練習",
+      "enabled": true,
+      "words": [
+        { "char": "小明今日去咗公園", "pinyin": "siu ming gam jat heoi liu gung jyun", "meaning": "描述去公園", "target": "小明今日去咗公園", "image": null, "type": "sentence", "wordBoundary": ["小明", "今日", "去咗", "公園"], "phrases": [{"start":0,"end":2,"char":"小明"},{"start":2,"end":4,"char":"今日"},{"start":4,"end":6,"char":"去咗"},{"start":6,"end":8,"char":"公園"}] },
+        { "char": "媽媽煮咗好食嘅飯", "pinyin": "maa maa zeu liu hou sik ge faan", "meaning": "描述媽媽煮飯", "target": "媽媽煮咗好食嘅飯", "image": null, "type": "sentence", "wordBoundary": ["媽媽", "煮咗", "好食", "嘅飯"], "phrases": [{"start":0,"end":2,"char":"媽媽"},{"start":2,"end":4,"char":"煮咗"},{"start":4,"end":6,"char":"好食"},{"start":6,"end":8,"char":"嘅飯"}] },
+        { "char": "我哋一齊去公園玩", "pinyin": "ngo dei jat cai heoi gung jyun waan", "meaning": "邀請一起玩", "target": "我哋一齊去公園玩", "image": null, "type": "sentence", "wordBoundary": ["我哋", "一齊", "去", "公園", "玩"], "phrases": [{"start":0,"end":2,"char":"我哋"},{"start":2,"end":4,"char":"一齊"},{"start":4,"end":5,"char":"去"},{"start":5,"end":7,"char":"公園"},{"start":7,"end":8,"char":"玩"}] },
+        { "char": "爸爸買咗新嘅車", "pinyin": "baa baa maai liu san ge ce", "meaning": "描述爸爸買車", "target": "爸爸買咗新嘅車", "image": null, "type": "sentence", "wordBoundary": ["爸爸", "買咗", "新", "嘅", "車"], "phrases": [{"start":0,"end":2,"char":"爸爸"},{"start":2,"end":4,"char":"買咗"},{"start":4,"end":5,"char":"新"},{"start":5,"end":6,"char":"嘅"},{"start":6,"end":7,"char":"車"}] },
+        { "char": "今日天氣好好", "pinyin": "gam jat tin heoi hou hou", "meaning": "讚美天氣", "target": "今日天氣好好", "image": null, "type": "sentence", "wordBoundary": ["今日", "天氣", "好好"], "phrases": [{"start":0,"end":2,"char":"今日"},{"start":2,"end":4,"char":"天氣"},{"start":4,"end":6,"char":"好好"}] }
+      ]
     }
   ]
 }
