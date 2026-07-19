@@ -1342,6 +1342,10 @@ function startRecording() {
     recognition.lang = 'zh-HK';
     recognition.continuous = false;
     recognition.interimResults = false;
+    // Track whether onresult fired — if onend fires without onresult,
+    // we know WebSpeech silently failed (no transcript available).
+    // Fall back to manual input prompt so user can still complete the assessment.
+    let _gotResult = false;
 
     try { recognition.start(); } catch (e) {
       console.error(e);
@@ -1355,6 +1359,7 @@ function startRecording() {
     recognition.onresult = (event) => {
       if (mySession !== _recordingSession) return; // stale callback from a stopped session
       const transcript = event.results[0][0].transcript.trim();
+      _gotResult = true; // mark — onend will skip manual input fallback
       const st = document.getElementById('recordingStatus'); // re-query: element may have been replaced
       if (st) st.innerHTML = `你講咗：${_e(transcript)}`;
       // Pass explicit student + word to survive async switch
@@ -1385,6 +1390,17 @@ function startRecording() {
       // Only show '錄音結束' if still in recording view (not navigated away)
       const st = document.getElementById('recordingStatus');
       const cur = st ? st.innerHTML : '';
+      // Fallback: if onresult never fired (WebSpeech silent fail — language pack
+      // missing, network drop, mic lost mid-recording), prompt for manual input
+      // so the student can still complete the assessment instead of being stuck.
+      if (!_gotResult) {
+        const currentWord = state.currentWord;
+        if (currentWord) {
+          if (st) st.innerHTML = '⚠️ 自動語音辨識失敗，請手動輸入';
+          _promptManualInput(st, currentWord);
+        }
+        return;
+      }
       if (cur.includes('錄音中') || cur.includes('請大聲朗讀')) {
         if (st) st.innerHTML = '錄音結束';
       }
@@ -2636,7 +2652,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.2.0';
+const _DEMO_SEED_VERSION = 'v1.2.1';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
