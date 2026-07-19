@@ -491,13 +491,51 @@ const _HOMOPHONE_TRAPS = {
   '叫': [{ char: '照', jyut: 'ziu3', note: '同音陷阱' }, { char: '笑', jyut: 'siu3', note: '同音陷阱' }],
   '高': [{ char: '搞', jyut: 'gaau2', note: '同音陷阱' }],
   '是': [{ char: '事', jyut: 'si6', note: '完全同音 — 唔算錯' }, { char: '市', jyut: 'si5', note: '聲調 6→5' }],
+  // Sprint 3: 20 new homophone traps from Cantonese high-frequency set
+  '你': [{ char: '泥', jyut: 'nei4', note: '聲調 5→4' }, { char: '尼', jyut: 'nei4', note: '聲調 5→4' }],
+  '我': [{ char: '臥', jyut: 'ngo6', note: '聲調 5→6' }],
+  '佢': [{ char: '距', jyut: 'keoi5', note: '同音陷阱' }],
+  '大': [{ char: '太', jyut: 'taai3', note: '聲調 6→3' }],
+  '細': [{ char: '洗', jyut: 'sai2', note: '聲調 3→2' }],
+  '高': [{ char: '糕', jyut: 'gou1', note: '同音陷阱' }],
+  '新': [{ char: '辛', jyut: 'san1', note: '同音陷阱' }],
+  '好': [{ char: '耗', jyut: 'hou3', note: '聲調 2→3' }],
+  '多': [{ char: '朵', jyut: 'do2', note: '聲調 1→2' }],
+  '少': [{ char: '掃', jyut: 'sou3', note: '聲調 2→3' }],
+  '先': [{ char: '仙', jyut: 'sin1', note: '同音陷阱' }],
+  '開': [{ char: '措', jyut: 'fo3', note: '同音陷阱' }],
+  '聽': [{ char: '廳', jyut: 'teng1', note: '同音陷阱' }],
+  '睇': [{ char: '提', jyut: 'tai4', note: '聲調 2→4' }],
+  '食': [{ char: '蝕', jyut: 'sik6', note: '同音陷阱' }],
+  '飲': [{ char: '蔭', jyut: 'jam3', note: '聲調 2→3' }],
+  '瞓': [{ char: '訓', jyut: 'fan3', note: '同音陷阱' }],
+  '坐': [{ char: '座', jyut: 'zo6', note: '聲調 5→6' }],
+  '買': [{ char: '埋', jyut: 'maai4', note: '聲調 5→4' }],
+  '俾': [{ char: '被', jyut: 'bei6', note: '聲調 2→6' }],
+  '寫': [{ char: '舍', jyut: 'se5', note: '聲調 2→5' }],
+  '讀': [{ char: '毒', jyut: 'duk6', note: '同音陷阱' }],
+  '話': [{ char: '化', jyut: 'faa3', note: '聲調 6→3' }],
+  '問': [{ char: '門', jyut: 'mun4', note: '聲調 6→4' }],
+  '見': [{ char: '建', jyut: 'gin3', note: '同音陷阱' }],
+  '走': [{ char: '奏', jyut: 'zau3', note: '聲調 2→3' }],
 };
 
 // Diagnose: returns { matched, nearMiss, wrong, missing, homophone, summary }
 // All diagnosis is in jyutping / display label space — UI layer translates.
-function _diagnosePronunciation(transcript, target, wordPinyin) {
+function _diagnosePronunciation(transcript, target, wordPinyin, wordBoundary) {
   // wordPinyin = word-level jyutping like "cheun tin" (jumbo string)
-  // We work at character level for simplicity.
+  // wordBoundary = optional array of phrases like ["小明", "今日", "去咗", "公園"].
+  //                If present, run per-phrase diagnosis (T2 sentence mode).
+  //                If absent, run whole-string diagnosis (T1 word mode, legacy).
+  //
+  // Backward compat: wordBoundary undefined → fall back to whole-string char-by-char
+  // (T1 single-word behavior). This is the silent fallback path — works correctly
+  // but doesn't give phrase-level granularity. Caller is expected to pass wordBoundary
+  // for sentence-type words.
+  if (wordBoundary && Array.isArray(wordBoundary) && wordBoundary.length > 0) {
+    return _diagnoseSentence(transcript, target, wordBoundary);
+  }
+
   const targetChars = [...target];
   const targetSylls = _getSyllables(target);          // what we WANT
   const userSylls = _transcriptToSyllables(transcript, target); // what they SAID
@@ -581,6 +619,179 @@ function _diagnosePronunciation(transcript, target, wordPinyin) {
   return { matched, nearMiss, wrong, homophone, missing, unmapped, summary, total };
 }
 
+// Phrase-aware sentence diagnosis (T2).
+// Greedy match: for each phrase in wordBoundary, take the next len(phrase) chars
+// from transcript. Run T1 per-char diagnosis on that slice. Aggregate across phrases.
+//
+// Family 4 (silent data loss) mitigation: if userCursor exceeds transcript length,
+// remaining phrases are marked as "missing" (transparent to caller) rather than
+// silently dropped.
+function _diagnoseSentence(transcript, target, wordBoundary) {
+  const userChars = [...transcript.replace(/[，。！？、\s]/g, '')];
+  const phrases = wordBoundary;
+  const totalChars = phrases.reduce((s, p) => s + [...p].length, 0);
+  const phraseResults = [];
+  const allMatched = [];
+  const allNearMiss = [];
+  const allWrong = [];
+  const allHomophone = [];
+  const allMissing = [];
+  const allUnmapped = [];
+
+  let userCursor = 0;
+  phrases.forEach((phrase, phraseIdx) => {
+    const phraseChars = [...phrase];
+    const phraseLen = phraseChars.length;
+    const userSlice = userChars.slice(userCursor, userCursor + phraseLen);
+    userCursor += phraseLen;
+
+    // Family 4: explicit guard — if user ran out, mark whole phrase as missing
+    if (userSlice.length === 0) {
+      phraseChars.forEach((c) => {
+        allMissing.push({ target: { char: c, raw: '?' }, char: c, reason: 'transcript_too_short' });
+      });
+      phraseResults.push({
+        phrase, phraseIdx,
+        kind: 'missing',
+        userSlice: '',
+        targetSylls: phraseChars.map(c => ({ char: c, init: '', rhyme: '', tone: 0, raw: '?' })),
+        userSylls: [],
+        matched: [], nearMiss: [], wrong: [], homophone: [], missing: phraseChars.map(c => ({ char: c })), unmapped: [],
+      });
+      return;
+    }
+
+    // Build syllables for this phrase's user slice
+    const phraseTarget = phraseChars.join('');
+    const sliceStr = userSlice.join('');
+    const targetSylls = _getSyllables(phraseTarget);
+    const sliceSylls = _transcriptToSyllables(sliceStr, phraseTarget);
+
+    // Run T1 per-char diagnosis on this slice
+    const result = _diagnoseCharSequence(targetSylls, sliceSylls);
+
+    // Determine phrase-level kind
+    const phraseMatched = result.matched.length;
+    const phraseTotal = targetSylls.length;
+    let kind = 'major';
+    if (phraseMatched === phraseTotal) kind = 'matched';
+    else if (phraseMatched + result.nearMiss.length === phraseTotal) kind = 'near';
+    else if (result.homophone.length > 0 && result.wrong.length === 0) kind = 'homophone';
+
+    phraseResults.push({
+      phrase, phraseIdx,
+      kind,
+      userSlice: sliceStr,
+      targetSylls,
+      userSylls: sliceSylls,
+      matched: result.matched,
+      nearMiss: result.nearMiss,
+      wrong: result.wrong,
+      homophone: result.homophone,
+      missing: result.missing,
+      unmapped: result.unmapped,
+    });
+
+    allMatched.push(...result.matched);
+    allNearMiss.push(...result.nearMiss);
+    allWrong.push(...result.wrong);
+    allHomophone.push(...result.homophone);
+    allMissing.push(...result.missing);
+    allUnmapped.push(...result.unmapped);
+  });
+
+  // Phrase-level summary (T2: use matched ratio, not absolute count)
+  const matchedRatio = totalChars > 0 ? allMatched.length / totalChars : 0;
+  let summary;
+  if (totalChars === 0) {
+    summary = { kind: 'empty', label: '無資料' };
+  } else if (matchedRatio >= 0.85) {
+    summary = { kind: 'perfect', label: '完全準確' };
+  } else if (matchedRatio >= 0.65) {
+    summary = { kind: 'near', label: '差少少就完美' };
+  } else if (allHomophone.length > 0 && allWrong.length === 0) {
+    summary = { kind: 'homophone', label: '近音字陷阱' };
+  } else if (allUnmapped.length > 0 && allMatched.length === 0 && allWrong.length === 0) {
+    summary = { kind: 'unmapped', label: 'ASR 無法辨識' };
+  } else if (allHomophone.length > 0) {
+    summary = { kind: 'homophone-mix', label: '近音字 + 其他錯誤' };
+  } else {
+    summary = { kind: 'major', label: '需要再嚟多次' };
+  }
+
+  return {
+    matched: allMatched,
+    nearMiss: allNearMiss,
+    wrong: allWrong,
+    homophone: allHomophone,
+    missing: allMissing,
+    unmapped: allUnmapped,
+    summary,
+    total: totalChars,
+    phrases: phraseResults,  // T2-specific: per-phrase detail for UI rendering
+    matchedRatio,
+  };
+}
+
+// Per-char diagnosis on a single phrase slice (T1 logic factored).
+// Family 5 (dead code via name collision) mitigation: this function does not shadow
+// _diagnosePronunciation — names are distinct.
+function _diagnoseCharSequence(targetSylls, userSylls) {
+  const matched = [];
+  const nearMiss = [];
+  const wrong = [];
+  const homophone = [];
+  const missing = [];
+
+  const usedUser = new Set();
+  const unmapped = [];
+
+  targetSylls.forEach((t) => {
+    // Homophone trap check
+    const traps = _HOMOPHONE_TRAPS[t.char] || [];
+    const homophoneHit = traps.find(hp => userSylls.some(u => u.char === hp.char && !usedUser.has(userSylls.indexOf(u))));
+    if (homophoneHit) {
+      const hpIdx = userSylls.findIndex(u => u.char === homophoneHit.char);
+      usedUser.add(hpIdx);
+      homophone.push({ target: t, user: homophoneHit, note: homophoneHit.note });
+      return;
+    }
+
+    // Best match
+    let bestMatch = -1;
+    let bestErr = null;
+    for (let i = 0; i < userSylls.length; i++) {
+      if (usedUser.has(i)) continue;
+      const u = userSylls[i];
+      if (u.known === false) continue;
+      const err = _classifyError(t, u);
+      if (err.kind === 'match') { bestMatch = i; bestErr = err; break; }
+      if (err.kind === 'tone-adj' && !bestErr) { bestMatch = i; bestErr = err; }
+      if ((err.kind === 'initial' || err.kind === 'final') && !bestErr) { bestMatch = i; bestErr = err; }
+    }
+    if (bestMatch === -1) {
+      const hasUnmapped = userSylls.some(u => u.known === false && !usedUser.has(userSylls.indexOf(u)));
+      if (hasUnmapped) {
+        const unmappedUser = userSylls.find(u => u.known === false && !usedUser.has(userSylls.indexOf(u)));
+        unmapped.push({ target: t, user: unmappedUser });
+      } else {
+        missing.push({ target: t, char: t.char });
+      }
+    } else {
+      usedUser.add(bestMatch);
+      if (bestErr.kind === 'match') {
+        matched.push({ target: t });
+      } else if (bestErr.kind === 'tone-adj') {
+        nearMiss.push({ target: t, user: userSylls[bestMatch], err: bestErr });
+      } else {
+        wrong.push({ target: t, user: userSylls[bestMatch], err: bestErr });
+      }
+    }
+  });
+
+  return { matched, nearMiss, wrong, homophone, missing, unmapped };
+}
+
 // Convert diagnosis → student-facing (natural language) + teacher-facing (jyutping)
 // Returns { studentText, teacherText, emoji, color }
 function _diagnosisToFeedback(diag) {
@@ -631,10 +842,70 @@ function _diagnosisToFeedback(diag) {
            teacherText: `${w.target.char} 錯音：${w.err.detail}（${w.target.raw} vs ${w.user.raw}）` };
 }
 
+// T2 sentence-mode: find the worst-scoring phrase and surface its specific error.
+// This is called BEFORE the T1 fallback when diag.phrases is present.
+function _diagnosisToPhraseFeedback(diag) {
+  const phrases = diag.phrases;
+  if (!phrases || phrases.length === 0) return null;
+  // Find worst phrase (lowest kind rank: matched=4, near=3, homophone=2, major=1, missing=0)
+  const rank = { matched: 4, near: 3, homophone: 2, major: 1, missing: 0 };
+  let worst = phrases[0];
+  for (const p of phrases) {
+    if (rank[p.kind] < rank[worst.kind]) worst = p;
+  }
+  // Generate per-phrase feedback
+  const phraseText = `「${worst.phrase}」`;
+  if (worst.kind === 'matched') return { phrase: worst.phrase, studentText: `${phraseText}讀得準！`, teacherText: `${worst.phrase} 全部音準確` };
+  if (worst.kind === 'near' && worst.nearMiss.length > 0) {
+    const tip = worst.nearMiss[0];
+    return {
+      phrase: worst.phrase,
+      studentText: `${phraseText}差少少，「${tip.target.char}」個音再清楚啲就完美`,
+      teacherText: `${worst.phrase} 近音 ${worst.matched.length}/${worst.matched.length + worst.nearMiss.length} — ${tip.err.detail}`,
+    };
+  }
+  if (worst.kind === 'homophone' && worst.homophone.length > 0) {
+    const hp = worst.homophone[0];
+    return {
+      phrase: worst.phrase,
+      studentText: `${phraseText}你讀成咗「${hp.user.char}」，同「${hp.target.char}」係近音字`,
+      teacherText: `${worst.phrase} 同音字陷阱：${hp.target.char}(${hp.target.raw}) ↔ ${hp.user.char}(${hp.user.jyut})`,
+    };
+  }
+  if (worst.kind === 'missing') {
+    return {
+      phrase: worst.phrase,
+      studentText: `${phraseText}聽唔到，可能讀得太快或太細聲`,
+      teacherText: `${worst.phrase} 缺少 — transcript 太短`,
+    };
+  }
+  // major: first wrong char
+  if (worst.wrong.length > 0) {
+    const w = worst.wrong[0];
+    return {
+      phrase: worst.phrase,
+      studentText: `${phraseText}「${w.target.char}」個音差少少，留意 ${w.err.detail}`,
+      teacherText: `${worst.phrase} 錯音：${w.err.detail}（${w.target.raw} vs ${w.user.raw}）`,
+    };
+  }
+  return null;
+}
+
 // Score → 3-tier stars (simplified for SEN — 1/2/3 stars only)
-// 3 stars = 做得很好 (≥75) | 2 stars = 有進步 (≥45) | 1 star = 仍須努力 (<45)
-// Old 80/60/40/0 boundaries replaced with friendlier 75/45 (Option B — bias toward reward)
-function _scoreToStars(score) {
+// T1 word mode: 3 stars = 做得很好 (≥75) | 2 stars = 有進步 (≥45) | 1 star = 仍須努力 (<45)
+// T2 sentence mode: matched ratio thresholds 85% / 65% (fair across word lengths)
+// Family 1 (default-state desync) mitigation: 2nd param `diagnosis` is optional;
+// when absent, fall back to T1 absolute score. Caller SHOULD pass diagnosis for sentence mode.
+// Family 3 (enable-condition) mitigation: 85%/65% boundary sharp (no 0.84/0.85 confusion).
+function _scoreToStars(score, diagnosis) {
+  // T2 sentence-mode: matched ratio for fairness across word lengths
+  if (diagnosis && diagnosis.total > 0 && Array.isArray(diagnosis.matched)) {
+    const ratio = diagnosis.matched.length / diagnosis.total;
+    if (ratio >= 0.85) return { stars: 3, emoji: '⭐⭐⭐', color: '#22c55e', label: '做得很好' };
+    if (ratio >= 0.65) return { stars: 2, emoji: '⭐⭐', color: '#22c55e', label: '有進步' };
+    return { stars: 1, emoji: '⭐', color: '#fb923c', label: '仍須努力' };
+  }
+  // T1 word-mode: absolute score (legacy)
   if (score >= 75) return { stars: 3, emoji: '⭐⭐⭐', color: '#22c55e', label: '做得很好' };
   if (score >= 45) return { stars: 2, emoji: '⭐⭐', color: '#22c55e', label: '有進步' };
   return { stars: 1, emoji: '⭐', color: '#fb923c', label: '仍須努力' };
@@ -977,10 +1248,18 @@ function renderFilteredAssessment() {
   const w = state.filteredWords[state.assessmentIndex];
   state.currentWord = w;
   const img = w.image ? `<img src="assets/images/${_e(w.image)}" style="width:140px;height:140px;object-fit:cover;border-radius:16px;margin:12px auto;display:block;border:3px solid #f59e0b;" loading="lazy">` : '';
+  // T2 sentence-mode UI: render word as phrase chunks with light purple background.
+  // Family 2 (reset-on-render) mitigation: word path preserved unchanged below.
+  // Family 5 (dead code): no shadowing of vocab-char — this is a different DOM element.
+  const charOrPhrase = (w.type === 'sentence' && Array.isArray(w.phrases) && w.phrases.length > 0)
+    ? `<div class="sentence-display" style="font-size:1.4em;line-height:1.8;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin:12px 0;">${
+        w.phrases.map(p => `<span class="phrase" style="padding:6px 10px;border-radius:8px;background:rgba(124,58,237,0.12);border:1px solid rgba(124,58,237,0.3);">${_e(p.char)}</span>`).join('')
+      }</div>`
+    : `<div class="vocab-char">${_e(w.char)}</div>`;
   container.innerHTML = `
     <div class="vocab-card" style="margin-bottom:30px;">
       ${img}
-      <div class="vocab-char">${_e(w.char)}</div>
+      ${charOrPhrase}
       <div class="vocab-pinyin">${_e(w.pinyin)}</div>
       <div style="margin:12px 0;color:#666;">${_e(w.meaning)}</div>
       <button class="speak-btn" data-speak="${_e(w.char)}" style="background:#7c3aed;width:100%;">🔊 聽正確發音</button>
@@ -1442,11 +1721,24 @@ function scorePronunciation(transcript, opts) {
     aiScore = Math.min(100, Math.floor(similarity * 50 + overlapBonus + firstMatch + bonus));
     scoringMethod = 'string-match';
 
-    // P1-E: Pronunciation diagnosis — characterize WHAT was wrong, not just similarity
-    diagnosis = _diagnosePronunciation(transcript, target, w.pinyin);
-    const diagFb = _diagnosisToFeedback(diagnosis);
-    // Combine emoji-prefixed message with diagnostic detail
-    feedback = `${diagFb.emoji} ${diagFb.studentText}`;
+    // P1-E: Pronunciation diagnosis — characterize WHAT was wrong, not just similarity.
+    // T2 (sentence mode): pass wordBoundary for phrase-level granularity.
+    diagnosis = _diagnosePronunciation(transcript, target, w.pinyin, w.wordBoundary);
+    let diagFb = _diagnosisToFeedback(diagnosis);
+    // T2 sentence-mode enhancement: if diagnosis returned per-phrase detail,
+    // append the worst-phrase-specific tip. Helps teacher locate problem phrases.
+    if (diagnosis.phrases && diagnosis.phrases.length > 0) {
+      const phraseFb = _diagnosisToPhraseFeedback(diagnosis);
+      if (phraseFb) {
+        // Only append phrase tip if not perfect (perfect = no need for extra tip)
+        if (diag.summary.kind !== 'perfect') {
+          feedback = `${diagFb.emoji} ${diagFb.studentText}（${phraseFb.studentText}）`;
+        }
+      }
+    } else {
+      // Combine emoji-prefixed message with diagnostic detail (T1 word mode)
+      feedback = `${diagFb.emoji} ${diagFb.studentText}`;
+    }
   }
 
   state.assessmentScores.push({ word: w.char, score: aiScore, transcript, engine: opts.engine || state.asrEngine, method: scoringMethod, diagnosis });
@@ -1455,10 +1747,24 @@ function scorePronunciation(transcript, opts) {
   // show result
   document.getElementById('assessmentContent').innerHTML = '';
   goTo('result');
-  document.getElementById('resultWord').textContent = w.char;
+  // T2: per-phrase color rendering when diagnosis has phrase detail.
+  // Family 2 mitigation: word path (no phrases) falls through to plain text.
+  const resultWordEl = document.getElementById('resultWord');
+  if (diagnosis && Array.isArray(diagnosis.phrases) && diagnosis.phrases.length > 0) {
+    resultWordEl.innerHTML = diagnosis.phrases.map(p => {
+      const color = p.kind === 'matched' ? '#22c55e' :       // 綠
+                    p.kind === 'near' ? '#f59e0b' :           // 橙
+                    p.kind === 'homophone' ? '#a855f7' :       // 紫
+                    '#fb923c';                                // 暖橙 (major/missing)
+      return `<span style="color:${color};font-weight:bold;margin:0 4px;">${_e(p.phrase)}</span>`;
+    }).join('');
+  } else {
+    resultWordEl.textContent = w.char;
+  }
 
   // P1-A: Score → 3-tier stars UI (75/45 boundaries, monochrome ⭐, warm color)
-  const stars = _scoreToStars(aiScore);
+  // T2 sentence-mode: pass diagnosis for matched-ratio-based stars.
+  const stars = _scoreToStars(aiScore, diagnosis);
   document.getElementById('resultScore').innerHTML =
     `<div style="font-size:3em;line-height:1;color:${stars.color};letter-spacing:4px;">${stars.emoji}</div>` +
     `<div style="font-size:1.1em;font-weight:bold;color:${stars.color};margin-top:8px;">${stars.label}</div>` +
@@ -1845,6 +2151,27 @@ async function init() {
       state.categories.forEach(c => { c.enabled = true; });
     }
     _rebuildWords();
+
+    // T2 sentence diagnosis dict expansion: fetch extended jyutping dictionary.
+    // Family 4 (silent data loss) mitigation: fetch fail → base 80 chars still works,
+    // but console.warn is visible to teacher via DevTools. No silent failure.
+    try {
+      const dictResp = await fetch('data/jyutping_extended.json');
+      if (dictResp.ok) {
+        const dictData = await dictResp.json();
+        // Filter out _comment / _source / _extracted metadata keys
+        const cleaned = {};
+        for (const [k, v] of Object.entries(dictData)) {
+          if (!k.startsWith('_') && typeof v === 'string') cleaned[k] = v;
+        }
+        Object.assign(_JYUTPING_DICT, cleaned);
+        console.log(`[dict] extended loaded ${Object.keys(cleaned).length} chars (total ${Object.keys(_JYUTPING_DICT).length})`);
+      } else {
+        console.warn('[dict] extended fetch failed: HTTP ' + dictResp.status);
+      }
+    } catch (e) {
+      console.warn('[dict] extended load failed, using base dict only:', e.message);
+    }
   } catch(e) {
     console.warn('無法載入 data/words.json', e);
     const savedCats = localStorage.getItem('yueCategories');
@@ -2309,7 +2636,7 @@ function _persistProgress() {
 // shows real charts out of the box. Idempotent: runs only once per browser
 // (yueSeededDemo flag) and only if the user has no real progress yet.
 const _DEMO_SEED_KEY = 'yueSeededDemo';
-const _DEMO_SEED_VERSION = 'v1.2.0-beta.1';
+const _DEMO_SEED_VERSION = 'v1.2.0';
 
 function _seedDemoProgress() {
   // Skip if already seeded in this version
